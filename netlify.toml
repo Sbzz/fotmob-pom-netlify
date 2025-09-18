@@ -1,7 +1,12 @@
+[build]
+  command = "npm ci"
+  publish = "public"
+
+[build.environment]
+  NODE_VERSION = "20"
+  # optional, prevents Playwright from trying to download its own browsers
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1"
+
 [functions]
   node_bundler = "esbuild"
   external_node_modules = ["@sparticuz/chromium", "playwright-core"]
-
-# If you want a Scheduled Function (cron-like), uncomment and use the scheduled file below
-# [functions."pom-scheduled"]
-#   schedule = "0 2 * * *" # daily 02:00 UTC
