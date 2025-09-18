@@ -105,25 +105,28 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
       try {
         const r = await fetch("/.netlify/functions/discover", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", "accept": "application/json" },
           body: JSON.stringify({ urls, maxMatches })
         });
-        playersResp = await r.json();
+      
+        const raw = await r.text();        // read text first
+        let data = null;
+        try { data = raw ? JSON.parse(raw) : null; } catch { /* not JSON */ }
+      
+        if (!r.ok) {
+          statusEl.textContent = `Discover error: HTTP ${r.status} ${r.statusText}\n` +
+            (data ? JSON.stringify(data, null, 2) : (raw || "(empty response)"));
+          return;
+        }
+        if (!data) {
+          statusEl.textContent = "Discover returned an empty response (possibly a timeout). Try fewer players / smaller maxMatches.";
+          return;
+        }
+        playersResp = data;
       } catch (e) {
-        statusEl.textContent = "Discover failed: " + e;
+        statusEl.textContent = "Discover failed (network/parse): " + e;
         return;
       }
-
-      const players = (playersResp.players || []).map(p => ({
-        player_url: p.player_url,
-        player_name: p.player_name,
-        match_urls: p.match_urls || [],
-        debug: p.debug || {}
-      }));
-
-      statusEl.textContent = `Discovered: ` + players.map(p =>
-        `${p.player_name}: ${p.match_urls.length} matches (anchors:${p.debug.anchors||0}, nextData:${p.debug.nextData||0}, html:${p.debug.htmlRegex||0})`
-      ).join(" | ");
 
       // 2) Check (fan-out)
       const bundles = [];
