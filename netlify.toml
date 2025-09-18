@@ -1,0 +1,7 @@
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["@sparticuz/chromium", "playwright-core"]
+
+# If you want a Scheduled Function (cron-like), uncomment and use the scheduled file below
+# [functions."pom-scheduled"]
+#   schedule = "0 2 * * *" # daily 02:00 UTC
