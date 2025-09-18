@@ -1,7 +1,9 @@
 import { chromium as pwChromium } from "playwright-core";
 import chromium from "@sparticuz/chromium";
 
-// ----- CONFIG -----
+/** =======================
+ *  CONFIG
+ *  ======================= */
 const ALLOWED_LEAGUES = new Set([
   "premier league",
   "bundesliga",
@@ -20,7 +22,9 @@ const POM_REGEXES = [
 ];
 const EMOJI_HINTS = ["🏆", "⭐"];
 
-// ----- HELPERS -----
+/** =======================
+ *  UTILS
+ *  ======================= */
 function norm(s = "") {
   return s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
@@ -29,8 +33,13 @@ function leagueIsAllowed(label = "") {
   for (const allowed of ALLOWED_LEAGUES) if (n.includes(allowed)) return true;
   return false;
 }
+async function smallPause(ms = 350) {
+  await new Promise(r => setTimeout(r, ms));
+}
 
-// Consent & hydration
+/** =======================
+ *  CONSENT / HYDRATION
+ *  ======================= */
 async function acceptCookiesEverywhere(page) {
   const names = [/Accept.*/i, /Agree.*/i, /Allow all.*/i, /Got it.*/i, /I understand.*/i, /Continue.*/i];
   for (const rx of names) {
@@ -56,7 +65,7 @@ async function waitForMatchToLoad(page) {
   try {
     await page.waitForSelector("time, :text-matches('Match facts'), :text-matches('Match Facts'), :text-matches('Facts')", { timeout: 12000 });
   } catch {
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(1200);
   }
 }
 async function clickMatchFactsTabIfPresent(page) {
@@ -73,7 +82,9 @@ async function clickMatchFactsTabIfPresent(page) {
   }
 }
 
-// JSON-LD helpers
+/** =======================
+ *  JSON-LD helpers
+ *  ======================= */
 function findInObj(obj, keys) {
   if (Array.isArray(obj)) {
     for (const it of obj) { const f = findInObj(it, keys); if (f) return f; }
@@ -85,9 +96,8 @@ function findInObj(obj, keys) {
   }
   return null;
 }
-
 async function parseMatchDatetime(page) {
-  // JSON-LD
+  // JSON-LD first
   try {
     const scripts = page.locator('script[type="application/ld+json"]');
     const cnt = await scripts.count();
@@ -104,7 +114,7 @@ async function parseMatchDatetime(page) {
       } catch {}
     }
   } catch {}
-  // <time datetime=...>
+  // <time datetime="...">
   try {
     const times = page.locator("time");
     const c = await times.count();
@@ -116,7 +126,7 @@ async function parseMatchDatetime(page) {
       }
     }
   } catch {}
-  // Fallback: title/body
+  // Fallback: title/body parse
   try {
     const t = await page.title();
     const body = await page.evaluate(() => document.body.innerText || "");
@@ -128,7 +138,6 @@ async function parseMatchDatetime(page) {
   } catch {}
   return null;
 }
-
 async function parseMatchCompetition(page) {
   // Links/breadcrumbs
   try {
@@ -162,7 +171,6 @@ async function parseMatchCompetition(page) {
   } catch {}
   return null;
 }
-
 async function findPomBlockAndCheckPlayer(page, playerName) {
   // aria-label first
   let label = page.locator('[aria-label*="player of the match" i], [aria-label*="man of the match" i]');
@@ -183,7 +191,6 @@ async function findPomBlockAndCheckPlayer(page, playerName) {
   }
   if (!label) return { found: false, rating: null, isPom: false };
 
-  // pull nearby text
   let containerText = "";
   try {
     containerText = await label.first().evaluate((el) => {
@@ -200,7 +207,9 @@ async function findPomBlockAndCheckPlayer(page, playerName) {
   return { found: true, rating: Number.isNaN(rating) ? null : rating, isPom };
 }
 
-// Player page helpers
+/** =======================
+ *  PLAYER PAGE HELPERS
+ *  ======================= */
 async function extractPlayerName(page) {
   try {
     const h1 = page.getByRole("heading", { level: 1 });
@@ -214,23 +223,77 @@ async function extractPlayerName(page) {
     return t.split(" - ")[0].trim() || t.trim();
   } catch { return ""; }
 }
-async function collectMatchLinksWithScroll(page, maxLinks, maxScrolls = 12) {
-  const seen = new Set();
-  for (let i = 0; i < maxScrolls; i++) {
-    const links = await page.locator('a[href*="/match/"]').evaluateAll((els) => els.map((e) => e.href));
-    for (const href of links) {
-      if (!seen.has(href)) {
-        seen.add(href);
-        if (seen.size >= maxLinks) return Array.from(seen).slice(0, maxLinks);
-      }
+
+/**
+ * Try to collect match URLs robustly:
+ * 1) Click "All matches" (if present)
+ * 2) First attempt: pick any <a href="/match/...">
+ * 3) Fallback: click visible rows/cards and record page.url() if it navigates to /match/...
+ */
+async function collectMatchLinksRobust(page, maxLinks, maxScrolls = 10) {
+  const hrefs = new Set();
+
+  // 0) Ensure we're on the match list section (desktop layout)
+  try {
+    const allMatches = page.getByText(/All matches/i);
+    if ((await allMatches.count()) > 0) {
+      await allMatches.first().click({ timeout: 2000 });
+      await smallPause(400);
     }
+  } catch {}
+
+  // 1) Try plain <a> links
+  for (let i = 0; i < maxScrolls; i++) {
     try { await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)); } catch {}
-    await new Promise((r) => setTimeout(r, 800));
+    await smallPause(500);
+
+    const links = await page
+      .locator('a[href*="/match/"]')
+      .evaluateAll((els) => Array.from(new Set(els.map((e) => e.href))));
+    for (const h of links) {
+      hrefs.add(h);
+      if (hrefs.size >= maxLinks) return Array.from(hrefs).slice(0, maxLinks);
+    }
   }
-  return Array.from(seen).slice(0, maxLinks);
+
+  // 2) Fallback: click rows/cards that look like matches
+  //    Limit candidates to avoid timeouts
+  const container = page.locator("section", { hasText: "Match stats" }).first();
+  const candidates = container
+    .locator('a, [role="link"], [role="button"], article, li, div[tabindex], div[class*="row"], tr');
+
+  const candCount = Math.min(await candidates.count(), maxLinks * 3); // cap probes
+  for (let i = 0; i < candCount && hrefs.size < maxLinks; i++) {
+    const el = candidates.nth(i);
+    try {
+      await el.scrollIntoViewIfNeeded({ timeout: 2000 });
+    } catch {}
+    // Try a click-navigate-capture-return loop
+    try {
+      const nav = page.waitForNavigation({ timeout: 3500 });
+      await el.click({ timeout: 1500 });
+      await nav.catch(() => null);
+      const urlNow = page.url();
+      if (urlNow.includes("/match/")) {
+        hrefs.add(urlNow);
+        // go back to player page
+        await page.goBack({ timeout: 7000 });
+        await page.waitForLoadState("domcontentloaded");
+        await smallPause(300);
+      } else {
+        // maybe it didn't navigate; just continue
+      }
+    } catch {
+      // ignore and move on
+    }
+  }
+
+  return Array.from(hrefs).slice(0, maxLinks);
 }
 
-// Core scraping
+/** =======================
+ *  CORE SCRAPERS
+ *  ======================= */
 async function processMatch(context, matchUrl, playerName, politeDelay) {
   const page = await context.newPage();
   const out = {
@@ -284,9 +347,15 @@ async function processPlayer(context, playerUrl, maxLinks, delay) {
   try {
     await page.goto(playerUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
     await acceptCookiesEverywhere(page);
+
+    // force desktop-like layout so matches table renders fully
+    try {
+      await page.setViewportSize({ width: 1360, height: 2200 });
+    } catch {}
+
     playerName = (await extractPlayerName(page)) || "Unknown";
 
-    const matchLinks = await collectMatchLinksWithScroll(page, maxLinks, 12);
+    const matchLinks = await collectMatchLinksRobust(page, maxLinks, 12);
     for (const href of matchLinks) {
       const info = await processMatch(context, href, playerName, delay);
       results.push(info);
@@ -298,6 +367,7 @@ async function processPlayer(context, playerUrl, maxLinks, delay) {
   const filtered = results.filter(
     (r) => r.league_allowed && r.within_season_2025_26 && r.player_is_pom
   );
+
   return {
     player_url: playerUrl,
     player_name: playerName,
@@ -308,7 +378,9 @@ async function processPlayer(context, playerUrl, maxLinks, delay) {
   };
 }
 
-// CSV
+/** =======================
+ *  CSV + HANDLER
+ *  ======================= */
 function toCsv(bundles) {
   const headers = [
     "player_name",
@@ -338,10 +410,9 @@ function toCsv(bundles) {
   return lines.join("\n");
 }
 
-// ----- HANDLER -----
 export async function handler(event) {
   try {
-    // Safe body parse; also allow GET with query string for testing
+    // Safe body parse; allow GET for quick tests
     let payload = {};
     if (event.httpMethod === "POST") {
       try { payload = JSON.parse(event.body || "{}"); }
@@ -352,30 +423,36 @@ export async function handler(event) {
     } else {
       payload = {
         urls: (event.queryStringParameters?.urls || "").split(",").filter(Boolean),
-        maxMatches: Number(event.queryStringParameters?.maxMatches || 40),
+        maxMatches: Number(event.queryStringParameters?.maxMatches || 20),
         delay: Number(event.queryStringParameters?.delay || 1.5),
       };
     }
 
-    const { urls = [], maxMatches = 40, delay = 1.5 } = payload;
+    const { urls = [], maxMatches = 20, delay = 1.5 } = payload;
     if (!Array.isArray(urls) || urls.length === 0) {
       return { statusCode: 400, headers: {"content-type":"application/json"},
         body: JSON.stringify({ error: "Provide { urls: [...] }" }) };
     }
 
-    // Launch Lambda-compatible Chromium for Playwright (BOOLEAN headless)
+    // Launch Chromium suitable for Netlify (BOOLEAN headless)
     const execPath = await chromium.executablePath();
     const browser = await pwChromium.launch({
       executablePath: execPath,
       args: chromium.args,
-      headless: true, // <- must be boolean
+      headless: true,
     });
-    const context = await browser.newContext();
+    // Force a common desktop UA to avoid "lite" DOM variants
+    const context = await browser.newContext({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+      viewport: { width: 1360, height: 2200 },
+      locale: "en-US",
+    });
 
     const allResults = [];
     for (const url of urls) {
       try {
-        allResults.push(await processPlayer(context, url, Number(maxMatches) || 40, Number(delay) || 1.5));
+        allResults.push(await processPlayer(context, url, Number(maxMatches) || 20, Number(delay) || 1.5));
       } catch (e) {
         allResults.push({
           player_url: url,
@@ -403,7 +480,6 @@ export async function handler(event) {
       body: JSON.stringify({ results: allResults, totals, summary, csv }),
     };
   } catch (e) {
-    // ALWAYS return JSON on failures
     return {
       statusCode: 500,
       headers: { "content-type": "application/json" },
