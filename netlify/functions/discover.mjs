@@ -1,12 +1,20 @@
 // netlify/functions/discover.mjs
-// Finds Top-5 domestic league match URLs for the 2025–26 season window.
-// Returns the same candidate match list for each player (the /check function will filter by player name).
+// Discovers Top-5 domestic league match URLs in a date window by calling FotMob's public JSON.
+// Returns same candidate matches for every player; /check filters per player.
 
-// ---- CONFIG ----
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
-const FOTMOB_MATCHES = "https://www.fotmob.com/api/matches?date=";
+const BASE = process.env.FOTMOB_MATCHES_BASE || "https://www.fotmob.com/api/matches?date=";
+const TZ_PARAM = process.env.FOTMOB_TZ || "&timezone=UTC";
 
-// ---- UTILS ----
+const UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
+const COMMON_HEADERS = {
+  accept: "application/json",
+  "accept-language": "en-GB,en;q=0.9",
+  "user-agent": UA,
+  referer: "https://www.fotmob.com/",
+};
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function yyyymmdd(d) {
@@ -15,42 +23,48 @@ function yyyymmdd(d) {
   const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}${m}${day}`;
 }
-
 function* dateRangeUTC(from, to) {
   const cur = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
   const end = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate()));
-  for (; cur <= end; cur.setUTCDate(cur.getUTCDate() + 1)) {
-    yield new Date(cur);
-  }
+  for (; cur <= end; cur.setUTCDate(cur.getUTCDate() + 1)) yield new Date(cur);
 }
 
-async function fetchJSON(url, retry = 2) {
+async function fetchJSON(url, retry = 3) {
+  let lastErr = null;
   for (let i = 0; i <= retry; i++) {
     try {
-      const res = await fetch(url, { headers: { accept: "application/json" } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
+      const res = await fetch(url, { headers: COMMON_HEADERS });
+      const txt = await res.text();
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} :: ${txt?.slice(0,200) || ""}`);
+      try {
+        return JSON.parse(txt);
+      } catch (e) {
+        throw new Error(`Non-JSON response (${txt?.slice(0,120) || "empty"})`);
+      }
     } catch (e) {
-      if (i === retry) throw e;
-      await sleep(300 + 300 * i);
+      lastErr = e;
+      await sleep(300 + 400 * i);
     }
   }
+  throw lastErr || new Error("Unknown fetch error");
 }
 
-// Concurrently fetch per-day match lists; keep only Top-5 leagues
+// Pull per-day lists; keep only Top-5 leagues
 async function getTop5SeasonMatches({ fromUTC, toUTC, concurrency = 6 }) {
   const ids = new Set();
   const infos = new Map();
   const dates = Array.from(dateRangeUTC(fromUTC, toUTC));
   let index = 0;
+  const fails = [];
 
   async function worker() {
     while (index < dates.length) {
       const i = index++;
       const d = dates[i];
       const key = yyyymmdd(d);
+      const url = `${BASE}${key}${TZ_PARAM}`;
       try {
-        const data = await fetchJSON(FOTMOB_MATCHES + key);
+        const data = await fetchJSON(url);
         for (const lg of data?.leagues ?? []) {
           const leagueId = Number(lg?.primaryId);
           if (!TOP5_LEAGUE_IDS.has(leagueId)) continue;
@@ -64,22 +78,21 @@ async function getTop5SeasonMatches({ fromUTC, toUTC, concurrency = 6 }) {
                 leagueId,
                 leagueName: lg?.name,
                 dateUTC: key,
-                title:
-                  m?.name ||
-                  `${m?.home?.name ?? ""} vs ${m?.away?.name ?? ""}`.trim(),
+                title: m?.name || `${m?.home?.name ?? ""} vs ${m?.away?.name ?? ""}`.trim(),
               });
             }
           }
         }
-      } catch {
-        // ignore per-day failures; continue
+      } catch (e) {
+        // capture a small sample of failures for debug
+        if (fails.length < 6) fails.push({ date: key, error: String(e).slice(0, 220) });
       }
     }
   }
 
   const workers = Array.from({ length: Math.min(concurrency, dates.length) }, worker);
   await Promise.all(workers);
-  return { ids, infos };
+  return { ids, infos, fails };
 }
 
 function extractSlugName(url) {
@@ -93,20 +106,15 @@ function extractSlugName(url) {
   }
 }
 
-// ---- NETLIFY HANDLER ----
 export async function handler(event) {
   try {
-    // Accept POST JSON (preferred) or GET query string for quick tests
+    // Accept POST (JSON) or GET (query) for quick tests
     let payload = {};
     if (event.httpMethod === "POST") {
       try {
         payload = JSON.parse(event.body || "{}");
       } catch {
-        return {
-          statusCode: 400,
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ error: "Invalid JSON body" }),
-        };
+        return { statusCode: 400, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: "Invalid JSON body" }) };
       }
     } else {
       payload = {
@@ -119,46 +127,22 @@ export async function handler(event) {
 
     const urls = Array.isArray(payload.urls) ? payload.urls : [];
     if (!urls.length) {
-      return {
-        statusCode: 400,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ error: "Provide { urls: [...] }" }),
-      };
+      return { statusCode: 400, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: "Provide { urls: [...] }" }) };
     }
 
-    // Season window (UTC). Default: from 2025-08-01 to today.
+    // Season window (UTC). Default: from 2025-08-01 to TODAY (UTC).
     const fromStr = payload.from || process.env.SEASON_FROM_YYYYMMDD || "20250801";
     const todayUTC = new Date();
-    const defaultTo = yyyymmdd(
-      new Date(
-        Date.UTC(
-          todayUTC.getUTCFullYear(),
-          todayUTC.getUTCMonth(),
-          todayUTC.getUTCDate()
-        )
-      )
-    );
+    const defaultTo = yyyymmdd(new Date(Date.UTC(todayUTC.getUTCFullYear(), todayUTC.getUTCMonth(), todayUTC.getUTCDate())));
     const toStr = payload.to || process.env.SEASON_TO_YYYYMMDD || defaultTo;
 
-    const fromUTC = new Date(
-      Date.UTC(+fromStr.slice(0, 4), +fromStr.slice(4, 6) - 1, +fromStr.slice(6, 8))
-    );
-    const toUTC = new Date(
-      Date.UTC(+toStr.slice(0, 4), +toStr.slice(4, 6) - 1, +toStr.slice(6, 8))
-    );
+    const fromUTC = new Date(Date.UTC(+fromStr.slice(0, 4), +fromStr.slice(4, 6) - 1, +fromStr.slice(6, 8)));
+    const toUTC   = new Date(Date.UTC(+toStr.slice(0, 4), +toStr.slice(4, 6) - 1, +toStr.slice(6, 8)));
 
-    // Pull Top-5 league matches once for the window
-    const { ids, infos } = await getTop5SeasonMatches({
-      fromUTC,
-      toUTC,
-      concurrency: 6,
-    });
+    // Fetch once for window
+    const { ids, infos, fails } = await getTop5SeasonMatches({ fromUTC, toUTC, concurrency: 6 });
+    const allMatchUrls = Array.from(ids).map((id) => `https://www.fotmob.com/match/${id}`);
 
-    const allMatchUrls = Array.from(ids).map(
-      (id) => `https://www.fotmob.com/match/${id}`
-    );
-
-    // Respect maxMatches (cap per player) if provided
     const cap = Number(payload.maxMatches) || 0;
     const perPlayer = cap > 0 ? allMatchUrls.slice(0, cap) : allMatchUrls;
 
@@ -171,9 +155,9 @@ export async function handler(event) {
         returned: perPlayer.length,
         window_from: fromStr,
         window_to: toStr,
-        leagues: Array.from(
-          new Set(Array.from(infos.values()).map((v) => v.leagueId))
-        ),
+        leagues: Array.from(new Set(Array.from(infos.values()).map((v) => v.leagueId))),
+        failed_days_count: fails.length,
+        failed_days_sample: fails, // small sample of errors
       },
     }));
 
@@ -192,10 +176,6 @@ export async function handler(event) {
       }),
     };
   } catch (e) {
-    return {
-      statusCode: 500,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ error: String(e) }),
-    };
+    return { statusCode: 500, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: String(e) }) };
   }
 }
