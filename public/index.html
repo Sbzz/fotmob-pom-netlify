@@ -2,18 +2,18 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>FotMob POM (2025–26)</title>
+    <title>FotMob POM (Top-5 leagues, 2025–26)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-      body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
       textarea, input, button { width: 100%; padding: .6rem; margin: .3rem 0; }
-      pre { background: #f6f8fa; padding: 1rem; overflow: auto; }
+      pre { background: #f6f8fa; padding: 1rem; overflow: auto; border-radius: 8px; }
       .row { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
       @media (max-width: 640px){ .row { grid-template-columns: 1fr; } }
     </style>
   </head>
   <body>
-    <h1>FotMob Player-of-the-Match (Top-5 leagues, 2025–26)</h1>
+    <h1>FotMob Player-of-the-Match (Top-5 domestic leagues, 2025–26)</h1>
 
     <label>Player URLs (one per line)</label>
     <textarea id="urls" rows="8" placeholder="https://www.fotmob.com/players/1467236/lamine-yamal
@@ -22,7 +22,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     <div class="row">
       <div>
         <label>Max matches per player</label>
-        <input id="maxMatches" type="number" value="60" />
+        <input id="maxMatches" type="number" value="40" />
       </div>
       <div>
         <label>Delay (seconds) between pages</label>
@@ -40,7 +40,6 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
       const out = document.getElementById("out");
       const btn = document.getElementById("run");
       const dl = document.getElementById("downloadCsv");
-
       let lastCsv = "";
 
       btn.onclick = async () => {
@@ -50,21 +49,37 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
           .split(/\r?\n/)
           .map(s => s.trim())
           .filter(Boolean);
-        const maxMatches = Number(document.getElementById("maxMatches").value || 60);
+        const maxMatches = Number(document.getElementById("maxMatches").value || 40);
         const delay = Number(document.getElementById("delay").value || 1.5);
 
         try {
           const res = await fetch("/.netlify/functions/pom", {
             method: "POST",
-            headers: {"content-type": "application/json"},
+            headers: { "content-type": "application/json", "accept": "application/json" },
             body: JSON.stringify({ urls, maxMatches, delay })
           });
-          const data = await res.json();
+
+          // Read raw text first to avoid "Unexpected end of JSON input"
+          const text = await res.text();
+          let data = null;
+          try { data = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
+
+          if (!res.ok) {
+            out.textContent = `HTTP ${res.status} ${res.statusText}\n` +
+              (data ? JSON.stringify(data, null, 2) : (text || "(empty response)"));
+            return;
+          }
+
+          if (!data) {
+            out.textContent = "Empty response from function (possibly a timeout). Try fewer URLs or smaller maxMatches.";
+            return;
+          }
+
           lastCsv = data.csv || "";
           dl.disabled = !lastCsv;
           out.textContent = JSON.stringify(data, null, 2);
         } catch (e) {
-          out.textContent = "Error: " + e;
+          out.textContent = "Network/parse error: " + e;
         }
       };
 
