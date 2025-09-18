@@ -2,34 +2,39 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>FotMob POM (Top-5 domestic leagues, 2025–26)</title>
+  <title>FotMob — POTM & Highest Rating (Top-5, 2025–26)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root { color-scheme: light dark; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; line-height: 1.4; }
-    textarea, input, button { width: 100%; padding: .6rem; margin: .35rem 0; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; max-width: 980px; margin: 2rem auto; padding: 0 1rem; line-height: 1.45; }
+    textarea, input, button { width: 100%; padding: .65rem; margin: .35rem 0; }
     button { cursor: pointer; }
-    pre { background: #f6f8fa; padding: 1rem; overflow: auto; border-radius: 8px; }
-    .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .75rem; }
-    @media (max-width: 720px){ .row3 { grid-template-columns: 1fr; } }
-    .actions { display: flex; gap: .75rem; flex-wrap: wrap; }
-    .muted { opacity: .8; font-size: .9rem; }
+    pre { background: #f6f8fa; padding: 1rem; overflow: auto; border-radius: 10px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .8rem; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+    @media (max-width: 760px){ .grid-3, .grid-2 { grid-template-columns: 1fr; } }
+    .row { display: flex; gap: .8rem; flex-wrap: wrap; }
+    .muted { opacity: .8; font-size: .92rem; }
     .ok { color: #0a7; }
     .err { color: #d33; }
   </style>
 </head>
 <body>
-  <h1>FotMob Player-of-the-Match (Top-5 domestic, 2025–26)</h1>
-  <p class="muted">This page calls two Netlify Functions: <code>/discover</code> (finds match IDs by date) and <code>/check</code> (verifies POTM). We’ll query <strong>small date chunks</strong> to avoid timeouts.</p>
+  <h1>FotMob — Player of the Match & Highest Rating (Top-5 leagues, 2025–26)</h1>
+  <p class="muted">
+    Paste one or more FotMob player URLs. This page calls two Netlify Functions:
+    <code>/discover</code> (find Top-5 league match IDs by date chunks) and
+    <code>/check</code> (verify POTM and Highest Rating for the player in each match).
+  </p>
 
   <label>Player URLs (one per line)</label>
   <textarea id="urls" rows="8" placeholder="https://www.fotmob.com/players/1467236/lamine-yamal
 https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
 
-  <div class="row3">
+  <div class="grid-3">
     <div>
       <label>From (YYYYMMDD)</label>
-      <input id="from" type="text" placeholder="20250801" />
+      <input id="from" type="text" placeholder="20250701" />
     </div>
     <div>
       <label>To (YYYYMMDD)</label>
@@ -41,24 +46,25 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     </div>
   </div>
 
-  <div class="row3">
+  <div class="grid-3">
     <div>
-      <label>Max matches per player (cap, optional)</label>
+      <label>Max matches per player (cap per chunk, optional)</label>
       <input id="maxMatches" type="number" value="0" min="0" />
     </div>
     <div>
-      <label>Check concurrency</label>
+      <label>Check concurrency (per player)</label>
       <input id="concurrency" type="number" value="3" min="1" />
     </div>
     <div>
       <label>Season filter</label>
-      <input type="text" value="Top-5 leagues & 2025–26" disabled />
+      <input type="text" value="Top-5 domestic & 2025–26" disabled />
     </div>
   </div>
 
-  <div class="actions">
+  <div class="row">
     <button id="run">Run</button>
-    <button id="downloadCsv" disabled>Download CSV</button>
+    <button id="downloadCsvPOM" disabled>Download CSV — POTM</button>
+    <button id="downloadCsvHigh" disabled>Download CSV — Highest Rating</button>
   </div>
 
   <h3>Status</h3>
@@ -71,9 +77,11 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     const out = document.getElementById("out");
     const statusEl = document.getElementById("status");
     const btn = document.getElementById("run");
-    const dl = document.getElementById("downloadCsv");
-    let lastCsv = "";
+    const dlP = document.getElementById("downloadCsvPOM");
+    const dlH = document.getElementById("downloadCsvHigh");
+    let lastCsvP = "", lastCsvH = "";
 
+    // ---------- helpers ----------
     const yyyymmdd = (d) => {
       const y = d.getUTCFullYear();
       const m = String(d.getUTCMonth() + 1).padStart(2, "0");
@@ -113,7 +121,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
       return chunks;
     };
 
-    const csvFromBundles = (bundles) => {
+    const csvFromPOM = (bundles) => {
       const headers = ["player_name","player_url","match_url","match_title","league_label","match_datetime_utc","rating"];
       const lines = [headers.join(",")];
       for (const b of bundles) {
@@ -125,7 +133,27 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
             (r.match_title || "").replace(/,/g, " "),
             (r.league_label || "").replace(/,/g, " "),
             r.match_datetime_utc || "",
-            r.rating == null ? "" : String(r.rating)
+            r.player_rating == null ? "" : String(r.player_rating)
+          ].join(","));
+        }
+      }
+      return lines.join("\n");
+    };
+
+    const csvFromHighest = (bundles) => {
+      const headers = ["player_name","player_url","match_url","match_title","league_label","match_datetime_utc","player_rating","max_rating"];
+      const lines = [headers.join(",")];
+      for (const b of bundles) {
+        const pname = (b.player_name || "").replace(/,/g, " ");
+        const purl = b.player_url || "";
+        for (const r of b.highest_2025_26_domestic || []) {
+          lines.push([
+            pname, purl, r.match_url || "",
+            (r.match_title || "").replace(/,/g, " "),
+            (r.league_label || "").replace(/,/g, " "),
+            r.match_datetime_utc || "",
+            r.player_rating == null ? "" : String(r.player_rating),
+            r.max_rating == null ? "" : String(r.max_rating)
           ].join(","));
         }
       }
@@ -133,7 +161,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     };
 
     async function runChecksForPlayer(player, concurrency) {
-      const { player_url, player_name, match_urls } = player;
+      const { player_url, player_name, player_id, match_urls } = player;
       const queue = [...(match_urls || [])];
       const results = [];
       let inFlight = 0, done = 0;
@@ -144,10 +172,17 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
           while (inFlight < concurrency && queue.length) {
             const matchUrl = queue.shift();
             inFlight++;
-            safeFetchJSON("/.netlify/functions/check", { playerName: player_name, matchUrl })
+            safeFetchJSON("/.netlify/functions/check", {
+              playerId: player_id,          // ← pass playerId
+              playerName: player_name,
+              matchUrl
+            })
               .then(({ ok, status, statusText, text, data }) => {
-                if (!ok || !data) results.push({ match_url: matchUrl, error: ok ? "Empty response" : `HTTP ${status} ${statusText}`, raw: text || null });
-                else results.push(data);
+                if (!ok || !data) {
+                  results.push({ match_url: matchUrl, error: ok ? "Empty response" : `HTTP ${status} ${statusText}`, raw: text || null });
+                } else {
+                  results.push(data);
+                }
               })
               .catch(e => results.push({ match_url: matchUrl, error: String(e) }))
               .finally(() => {
@@ -161,15 +196,17 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
       });
     }
 
+    // ---------- main ----------
     btn.onclick = async () => {
-      btn.disabled = true; dl.disabled = true; lastCsv = "";
+      btn.disabled = true;
+      dlP.disabled = true; dlH.disabled = true; lastCsvP = ""; lastCsvH = "";
       out.textContent = "—"; statusEl.classList.remove("err","ok");
       statusEl.textContent = "Starting…";
 
       const urls = parseUrls();
       if (!urls.length) { statusEl.textContent = "Paste at least one player URL."; btn.disabled = false; return; }
 
-      const fromInput = document.getElementById("from").value.trim() || "20250801";
+      const fromInput = document.getElementById("from").value.trim() || "20250701";
       const toInput   = document.getElementById("to").value.trim()   || todayUTC();
       const chunkDays = Math.max(1, Number(document.getElementById("chunkDays").value || 7));
       const maxMatchesCap = Math.max(0, Number(document.getElementById("maxMatches").value || 0));
@@ -178,10 +215,8 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
       const chunks = chunkRanges(fromInput, toInput, chunkDays);
       statusEl.textContent = `Discovering in ${chunks.length} chunk(s)…`;
 
-      // Aggregate players across chunks
-      const playerMap = new Map(); // key: player_url -> { player_url, player_name, match_set:Set }
-      let totalUnique = 0;
-
+      // Aggregate across chunks: player_url -> { player_url, player_name, player_id, match_set:Set }
+      const playerMap = new Map();
       for (let i = 0; i < chunks.length; i++) {
         const c = chunks[i];
         statusEl.textContent = `Discovering chunk ${i+1}/${chunks.length} (${c.from}..${c.to})…`;
@@ -196,59 +231,91 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
           btn.disabled = false; return;
         }
 
-        const players = disc.data.players || [];
-        for (const p of players) {
+        for (const p of (disc.data.players || [])) {
           const key = p.player_url;
-          if (!playerMap.has(key)) playerMap.set(key, { player_url: key, player_name: p.player_name, match_set: new Set() });
+          if (!playerMap.has(key)) {
+            playerMap.set(key, { player_url: key, player_name: p.player_name, player_id: p.player_id, match_set: new Set() });
+          }
           const entry = playerMap.get(key);
-          for (const u of (p.match_urls || [])) entry.match_set.add(u);
+          (p.match_urls || []).forEach(u => entry.match_set.add(u));
+          // prefer the first non-null player_id/player_name seen
+          if (entry.player_id == null && p.player_id != null) entry.player_id = p.player_id;
+          if (!entry.player_name && p.player_name) entry.player_name = p.player_name;
         }
-        totalUnique = Array.from(playerMap.values()).reduce((a, b) => a + b.match_set.size, 0);
       }
 
-      // Convert sets to arrays
       const aggregated = Array.from(playerMap.values()).map(e => ({
         player_url: e.player_url,
         player_name: e.player_name,
+        player_id: e.player_id,
         match_urls: Array.from(e.match_set)
       }));
 
+      const totalUnique = aggregated.reduce((a, b) => a + b.match_urls.length, 0);
       statusEl.textContent = `Discovered ${totalUnique} unique match URLs across ${chunks.length} chunk(s). Starting checks…`;
 
-      // Run checks
       const bundles = [];
       for (const p of aggregated) {
         const checked = await runChecksForPlayer(p, concurrency);
-        const filtered = checked.filter(r => r.league_allowed && r.within_season_2025_26 && r.player_is_pom);
+
+        // Filter for Top-5 + season window
+        const valid = checked.filter(r => r.league_allowed && r.within_season_2025_26);
+        const hitsPotm = valid.filter(r => r.player_is_pom);
+        const hitsHighest = valid.filter(r => r.has_highest_rating);
+
         bundles.push({
           player_url: p.player_url,
           player_name: p.player_name,
           checked_matches: checked.length,
-          pom_2025_26_domestic_count: filtered.length,
-          pom_2025_26_domestic: filtered,
+          pom_2025_26_domestic_count: hitsPotm.length,
+          highest_rating_count: hitsHighest.length,    // NEW
+          pom_2025_26_domestic: hitsPotm,
+          highest_2025_26_domestic: hitsHighest,       // NEW
           raw: checked
         });
       }
 
       // Summaries + CSV
-      const totals = bundles.map(b => ({ player_name: b.player_name, total: b.pom_2025_26_domestic_count }));
+      const totals = bundles.map(b => ({
+        player_name: b.player_name,
+        potm_total: b.pom_2025_26_domestic_count,
+        highest_rating_total: b.highest_rating_count
+      }));
       const summary = {
         players_processed: bundles.length,
-        total_pom_hits_2025_26_domestic: bundles.reduce((a,b)=>a+(b.pom_2025_26_domestic_count||0),0)
+        total_pom_hits_2025_26_domestic: bundles.reduce((a,b)=>a+(b.pom_2025_26_domestic_count||0),0),
+        total_highest_rating_hits_2025_26_domestic: bundles.reduce((a,b)=>a+(b.highest_rating_count||0),0)
       };
-      lastCsv = csvFromBundles(bundles); dl.disabled = !lastCsv;
 
-      out.textContent = JSON.stringify({ results: bundles, totals, summary }, null, 2);
+      lastCsvP = csvFromPOM(bundles);
+      lastCsvH = csvFromHighest(bundles);
+      dlP.disabled = !lastCsvP;
+      dlH.disabled = !lastCsvH;
+
+      // Compact KPI header + full JSON
+      const kpis = bundles.map(b =>
+        `• ${b.player_name}: checked ${b.checked_matches}, POTM ${b.pom_2025_26_domestic_count}, Highest ${b.highest_rating_count}`
+      ).join("\n");
+
+      out.textContent = `Summary:\n${kpis}\n\n` + JSON.stringify({ results: bundles, totals, summary }, null, 2);
       statusEl.classList.add("ok"); statusEl.textContent = "Done.";
       btn.disabled = false;
     };
 
-    dl.onclick = () => {
-      if (!lastCsv) return;
-      const blob = new Blob([lastCsv], { type: "text/csv" });
+    dlP.onclick = () => {
+      if (!lastCsvP) return;
+      const blob = new Blob([lastCsvP], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url; a.download = "pom_results_2025_26.csv";
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    };
+    dlH.onclick = () => {
+      if (!lastCsvH) return;
+      const blob = new Blob([lastCsvH], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "highest_rating_results_2025_26.csv";
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     };
   </script>
