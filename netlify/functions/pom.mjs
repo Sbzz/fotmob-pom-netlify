@@ -30,11 +30,13 @@ function norm(s = "") {
 }
 function leagueIsAllowed(label = "") {
   const n = norm(label);
-  for (const allowed of ALLOWED_LEAGUES) if (n.includes(allowed)) return true;
+  for (const allowed of ALLOWED_LEAGUES) {
+    if (n.includes(allowed)) return true;
+  }
   return false;
 }
 async function smallPause(ms = 350) {
-  await new Promise(r => setTimeout(r, ms));
+  await new Promise((r) => setTimeout(r, ms));
 }
 
 /** =======================
@@ -45,40 +47,71 @@ async function acceptCookiesEverywhere(page) {
   for (const rx of names) {
     try {
       const btn = page.getByRole("button", { name: rx });
-      if ((await btn.count()) > 0) { await btn.first().click({ timeout: 2000 }); break; }
-    } catch {}
+      if ((await btn.count()) > 0) {
+        await btn.first().click({ timeout: 2000 });
+        break;
+      }
+    } catch {
+      // ignore
+    }
   }
   for (const frame of page.frames()) {
     for (const rx of names) {
       try {
         const btn = frame.getByRole("button", { name: rx });
-        if ((await btn.count()) > 0) { await btn.first().click({ timeout: 2000 }); break; }
-      } catch {}
+        if ((await btn.count()) > 0) {
+          await btn.first().click({ timeout: 2000 });
+          break;
+        }
+      } catch {
+        // ignore
+      }
     }
   }
   try {
     const loc = page.locator("text=/accept all|accept|agree/i");
-    if ((await loc.count()) > 0) await loc.first().click({ timeout: 1500 });
-  } catch {}
+    if ((await loc.count()) > 0) {
+      await loc.first().click({ timeout: 1500 });
+    }
+  } catch {
+    // ignore
+  }
 }
+
 async function waitForMatchToLoad(page) {
   try {
-    await page.waitForSelector("time, :text-matches('Match facts'), :text-matches('Match Facts'), :text-matches('Facts')", { timeout: 12000 });
+    await page.waitForSelector(
+      "time, :text-matches('Match facts'), :text-matches('Match Facts'), :text-matches('Facts')",
+      { timeout: 12000 }
+    );
   } catch {
     await page.waitForTimeout(1200);
   }
 }
+
 async function clickMatchFactsTabIfPresent(page) {
   const labels = [/Match facts/i, /Facts/i, /Match Facts/i];
   for (const rx of labels) {
     try {
       const tab = page.getByRole("tab", { name: rx });
-      if ((await tab.count()) > 0) { await tab.first().click({ timeout: 2500 }); await page.waitForTimeout(400); return; }
-    } catch {}
+      if ((await tab.count()) > 0) {
+        await tab.first().click({ timeout: 2500 });
+        await page.waitForTimeout(400);
+        return;
+      }
+    } catch {
+      // ignore
+    }
     try {
       const link = page.getByRole("link", { name: rx });
-      if ((await link.count()) > 0) { await link.first().click({ timeout: 2500 }); await page.waitForTimeout(400); return; }
-    } catch {}
+      if ((await link.count()) > 0) {
+        await link.first().click({ timeout: 2500 });
+        await page.waitForTimeout(400);
+        return;
+      }
+    } catch {
+      // ignore
+    }
   }
 }
 
@@ -87,15 +120,20 @@ async function clickMatchFactsTabIfPresent(page) {
  *  ======================= */
 function findInObj(obj, keys) {
   if (Array.isArray(obj)) {
-    for (const it of obj) { const f = findInObj(it, keys); if (f) return f; }
+    for (const it of obj) {
+      const f = findInObj(it, keys);
+      if (f) return f;
+    }
   } else if (obj && typeof obj === "object") {
     for (const [k, v] of Object.entries(obj)) {
       if (keys.has(k) && (typeof v === "string" || typeof v === "number")) return String(v);
-      const f = findInObj(v, keys); if (f) return f;
+      const f = findInObj(v, keys);
+      if (f) return f;
     }
   }
   return null;
 }
+
 async function parseMatchDatetime(page) {
   // JSON-LD first
   try {
@@ -111,9 +149,13 @@ async function parseMatchDatetime(page) {
           const d = new Date(ts);
           if (!Number.isNaN(d.getTime())) return d;
         }
-      } catch {}
+      } catch {
+        // ignore
+      }
     }
-  } catch {}
+  } catch {
+    // ignore
+  }
   // <time datetime="...">
   try {
     const times = page.locator("time");
@@ -125,7 +167,9 @@ async function parseMatchDatetime(page) {
         if (!Number.isNaN(d.getTime())) return d;
       }
     }
-  } catch {}
+  } catch {
+    // ignore
+  }
   // Fallback: title/body parse
   try {
     const t = await page.title();
@@ -135,9 +179,12 @@ async function parseMatchDatetime(page) {
       const d = new Date(s);
       if (!Number.isNaN(d.getTime())) return d;
     }
-  } catch {}
+  } catch {
+    // ignore
+  }
   return null;
 }
+
 async function parseMatchCompetition(page) {
   // Links/breadcrumbs
   try {
@@ -147,7 +194,9 @@ async function parseMatchCompetition(page) {
     for (const t of texts) {
       if (leagueIsAllowed(t)) return t.trim();
     }
-  } catch {}
+  } catch {
+    // ignore
+  }
   // JSON-LD name
   try {
     const scripts = page.locator('script[type="application/ld+json"]');
@@ -159,18 +208,25 @@ async function parseMatchCompetition(page) {
         const data = JSON.parse(raw);
         const name = findInObj(data, new Set(["name"]));
         if (name && leagueIsAllowed(name)) return name.trim();
-      } catch {}
+      } catch {
+        // ignore
+      }
     }
-  } catch {}
+  } catch {
+    // ignore
+  }
   // Fallback scan
   try {
     const body = await page.evaluate(() => document.body.innerText || "");
     for (const allowed of ALLOWED_LEAGUES) {
       if (norm(body).includes(allowed)) return allowed;
     }
-  } catch {}
+  } catch {
+    // ignore
+  }
   return null;
 }
+
 async function findPomBlockAndCheckPlayer(page, playerName) {
   // aria-label first
   let label = page.locator('[aria-label*="player of the match" i], [aria-label*="man of the match" i]');
@@ -179,14 +235,20 @@ async function findPomBlockAndCheckPlayer(page, playerName) {
     label = null;
     for (const rx of POM_REGEXES) {
       const loc = page.locator(`text=/${rx.source}/i`);
-      if ((await loc.count()) > 0) { label = loc; break; }
+      if ((await loc.count()) > 0) {
+        label = loc;
+        break;
+      }
     }
   }
   // emoji hint
   if (!label) {
     for (const em of EMOJI_HINTS) {
       const loc = page.locator(`text=${em}`);
-      if ((await loc.count()) > 0) { label = loc; break; }
+      if ((await loc.count()) > 0) {
+        label = loc;
+        break;
+      }
     }
   }
   if (!label) return { found: false, rating: null, isPom: false };
@@ -198,8 +260,11 @@ async function findPomBlockAndCheckPlayer(page, playerName) {
       return host.innerText || "";
     });
   } catch {
-    try { containerText = await page.evaluate(() => document.body.innerText || ""); }
-    catch { containerText = ""; }
+    try {
+      containerText = await page.evaluate(() => document.body.innerText || "");
+    } catch {
+      containerText = "";
+    }
   }
   const isPom = norm(containerText).includes(norm(playerName));
   const m = containerText.match(/\b(\d{1,2}(?:\.\d)?)\b/);
@@ -217,11 +282,15 @@ async function extractPlayerName(page) {
       const txt = (await h1.first().textContent())?.trim();
       if (txt) return txt;
     }
-  } catch {}
+  } catch {
+    // ignore
+  }
   try {
     const t = await page.title();
     return t.split(" - ")[0].trim() || t.trim();
-  } catch { return ""; }
+  } catch {
+    return "";
+  }
 }
 
 // Grab /match/<id> in multiple ways; return { urls, debug }
@@ -229,18 +298,24 @@ async function collectMatchLinksMulti(page, maxLinks, maxScrolls = 10) {
   const hrefs = new Set();
   const debug = { anchors: 0, nextData: 0, htmlRegex: 0, clickedRows: 0 };
 
-  // 0) Try to switch to a list view of matches if there's a toggle
+  // Try to switch to a list view of matches if there's a toggle
   try {
     const allMatches = page.getByText(/All matches|Matches|Fixtures/i).first();
     if ((await allMatches.count()) > 0) {
       await allMatches.click({ timeout: 2000 }).catch(() => {});
       await smallPause(400);
     }
-  } catch {}
+  } catch {
+    // ignore
+  }
 
   // 1) Scroll and collect <a href="/match/...">
   for (let i = 0; i < maxScrolls && hrefs.size < maxLinks; i++) {
-    try { await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)); } catch {}
+    try {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    } catch {
+      // ignore
+    }
     await smallPause(600);
 
     const links = await page
@@ -249,7 +324,9 @@ async function collectMatchLinksMulti(page, maxLinks, maxScrolls = 10) {
     debug.anchors += links.length;
     for (const h of links) {
       hrefs.add(h);
-      if (hrefs.size >= maxLinks) return { urls: Array.from(hrefs).slice(0, maxLinks), debug };
+      if (hrefs.size >= maxLinks) {
+        return { urls: Array.from(hrefs).slice(0, maxLinks), debug };
+      }
     }
   }
 
@@ -260,7 +337,9 @@ async function collectMatchLinksMulti(page, maxLinks, maxScrolls = 10) {
         if (window.__NEXT_DATA__) return JSON.stringify(window.__NEXT_DATA__);
         const el = document.getElementById("__NEXT_DATA__");
         return el ? el.textContent : null;
-      } catch { return null; }
+      } catch {
+        return null;
+      }
     });
     if (raw) {
       try {
@@ -274,29 +353,43 @@ async function collectMatchLinksMulti(page, maxLinks, maxScrolls = 10) {
         debug.nextData = nextUrls.size;
         for (const u of nextUrls) {
           hrefs.add(u);
-          if (hrefs.size >= maxLinks) return { urls: Array.from(hrefs).slice(0, maxLinks), debug };
+          if (hrefs.size >= maxLinks) {
+            return { urls: Array.from(hrefs).slice(0, maxLinks), debug };
+          }
         }
-      } catch {}
+      } catch {
+        // ignore
+      }
     }
-  } catch {}
+  } catch {
+    // ignore
+  }
 
   // 3) Regex over full HTML (as final fallback)
   try {
     const html = await page.content();
     const re = /href="\/match\/(\d+)"/g;
-    let m; let fromHtml = 0;
+    let m;
+    let fromHtml = 0;
     while ((m = re.exec(html)) !== null) {
       hrefs.add(`https://www.fotmob.com/match/${m[1]}`);
       fromHtml++;
       if (hrefs.size >= maxLinks) break;
     }
     debug.htmlRegex = fromHtml;
-    if (hrefs.size >= maxLinks) return { urls: Array.from(hrefs).slice(0, maxLinks), debug };
-  } catch {}
+    if (hrefs.size >= maxLinks) {
+      return { urls: Array.from(hrefs).slice(0, maxLinks), debug };
+    }
+  } catch {
+    // ignore
+  }
 
-  // 4) As a last resort, probe-click some candidate rows/cards and record navigation
-  const candidates = page.locator('a, [role="link"], [role="button"], article, li, div[tabindex], div[class*="row"], tr');
-  const limit = Math.min(await candidates.count(), maxLinks * 3);
+  // 4) Probe-click some candidate rows/cards and record navigation
+  const candidates = page.locator(
+    'a, [role="link"], [role="button"], article, li, div[tabindex], div[class*="row"], tr'
+  );
+  const total = await candidates.count();
+  const limit = Math.min(total, maxLinks * 3);
   for (let i = 0; i < limit && hrefs.size < maxLinks; i++) {
     const el = candidates.nth(i);
     try {
@@ -312,7 +405,9 @@ async function collectMatchLinksMulti(page, maxLinks, maxScrolls = 10) {
         await page.waitForLoadState("domcontentloaded").catch(() => {});
         await smallPause(300);
       }
-    } catch {}
+    } catch {
+      // ignore and continue
+    }
   }
 
   return { urls: Array.from(hrefs).slice(0, maxLinks), debug };
@@ -377,8 +472,16 @@ async function processPlayer(context, playerUrl, maxLinks, delay) {
     await acceptCookiesEverywhere(page);
 
     // Prefer desktop-like layout
-    try { await page.setViewportSize({ width: 1360, height: 2200 }); } catch {}
-    try { await page.waitForLoadState("networkidle", { timeout: 8000 }); } catch {}
+    try {
+      await page.setViewportSize({ width: 1360, height: 2200 });
+    } catch {
+      // ignore
+    }
+    try {
+      await page.waitForLoadState("networkidle", { timeout: 8000 });
+    } catch {
+      // ignore
+    }
 
     playerName = (await extractPlayerName(page)) || "Unknown";
 
@@ -404,7 +507,7 @@ async function processPlayer(context, playerUrl, maxLinks, delay) {
     pom_2025_26_domestic_count: filtered.length,
     pom_2025_26_domestic: filtered,
     raw: results,
-    debug, // <— NEW: shows how many links each method found
+    debug, // helps see where links came from
   };
 }
 
@@ -426,15 +529,17 @@ function toCsv(bundles) {
     const pname = (b.player_name || "").replace(/,/g, " ");
     const purl = b.player_url || "";
     for (const r of b.pom_2025_26_domestic || []) {
-      lines.push([
-        pname,
-        purl,
-        r.match_url || "",
-        (r.match_title || "").replace(/,/g, " "),
-        (r.league_label || "").replace(/,/g, " "),
-        r.match_datetime_utc || "",
-        r.rating == null ? "" : String(r.rating),
-      ].join(","));
+      lines.push(
+        [
+          pname,
+          purl,
+          r.match_url || "",
+          (r.match_title || "").replace(/,/g, " "),
+          (r.league_label || "").replace(/,/g, " "),
+          r.match_datetime_utc || "",
+          r.rating == null ? "" : String(r.rating),
+        ].join(",")
+      );
     }
   }
   return lines.join("\n");
@@ -445,10 +550,14 @@ export async function handler(event) {
     // Safe body parse; allow GET for quick tests
     let payload = {};
     if (event.httpMethod === "POST") {
-      try { payload = JSON.parse(event.body || "{}"); }
-      catch {
-        return { statusCode: 400, headers: {"content-type":"application/json"},
-          body: JSON.stringify({ error: "Invalid JSON body" }) };
+      try {
+        payload = JSON.parse(event.body || "{}");
+      } catch {
+        return {
+          statusCode: 400,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ error: "Invalid JSON body" }),
+        };
       }
     } else {
       payload = {
@@ -460,8 +569,11 @@ export async function handler(event) {
 
     const { urls = [], maxMatches = 20, delay = 1.5 } = payload;
     if (!Array.isArray(urls) || urls.length === 0) {
-      return { statusCode: 400, headers: {"content-type":"application/json"},
-        body: JSON.stringify({ error: "Provide { urls: [...] }" }) };
+      return {
+        statusCode: 400,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ error: "Provide { urls: [...] }" }),
+      };
     }
 
     // Launch Chromium suitable for Netlify (BOOLEAN headless)
@@ -474,7 +586,7 @@ export async function handler(event) {
     // Force a common desktop UA to avoid "lite" DOM variants
     const context = await browser.newContext({
       userAgent:
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit(537.36) Chrome/119.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
       viewport: { width: 1360, height: 2200 },
       locale: "en-US",
     });
@@ -482,7 +594,9 @@ export async function handler(event) {
     const allResults = [];
     for (const url of urls) {
       try {
-        allResults.push(await processPlayer(context, url, Number(maxMatches) || 20, Number(delay) || 1.5));
+        allResults.push(
+          await processPlayer(context, url, Number(maxMatches) || 20, Number(delay) || 1.5)
+        );
       } catch (e) {
         allResults.push({
           player_url: url,
@@ -497,7 +611,29 @@ export async function handler(event) {
 
     await browser.close();
 
-    const totals = allResults.map(b => ({ player_name: b.player_name, total: b.pom_2025_26_domestic_count }));
+    const totals = allResults.map((b) => ({
+      player_name: b.player_name,
+      total: b.pom_2025_26_domestic_count,
+    }));
     const summary = {
       players_processed: allResults.length,
-      total_pom_hits_2025_26_domestic: allResu_
+      total_pom_hits_2025_26_domestic: allResults.reduce(
+        (a, b) => a + (b.pom_2025_26_domestic_count || 0),
+        0
+      ),
+    };
+    const csv = toCsv(allResults);
+
+    return {
+      statusCode: 200,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ results: allResults, totals, summary, csv }),
+    };
+  } catch (e) {
+    return {
+      statusCode: 500,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ error: String(e) }),
+    };
+  }
+}
