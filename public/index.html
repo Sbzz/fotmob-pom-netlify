@@ -1,100 +1,167 @@
 <!doctype html>
 <html>
-  <head>
-    <meta charset="utf-8" />
-    <title>FotMob POM (Top-5 leagues, 2025–26)</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
-      textarea, input, button { width: 100%; padding: .6rem; margin: .3rem 0; }
-      pre { background: #f6f8fa; padding: 1rem; overflow: auto; border-radius: 8px; }
-      .row { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
-      @media (max-width: 640px){ .row { grid-template-columns: 1fr; } }
-    </style>
-  </head>
-  <body>
-    <h1>FotMob Player-of-the-Match (Top-5 domestic leagues, 2025–26)</h1>
+<head>
+  <meta charset="utf-8" />
+  <title>FotMob POM (Top-5 leagues, 2025–26)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+    textarea, input, button { width: 100%; padding: .6rem; margin: .3rem 0; }
+    pre { background: #f6f8fa; padding: 1rem; overflow: auto; border-radius: 8px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+    @media (max-width: 640px){ .row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>FotMob Player-of-the-Match (Top-5 domestic leagues, 2025–26)</h1>
 
-    <label>Player URLs (one per line)</label>
-    <textarea id="urls" rows="8" placeholder="https://www.fotmob.com/players/1467236/lamine-yamal
+  <label>Player URLs (one per line)</label>
+  <textarea id="urls" rows="8" placeholder="https://www.fotmob.com/players/1467236/lamine-yamal
 https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
 
-    <div class="row">
-      <div>
-        <label>Max matches per player</label>
-        <input id="maxMatches" type="number" value="40" />
-      </div>
-      <div>
-        <label>Delay (seconds) between pages</label>
-        <input id="delay" type="number" step="0.1" value="1.5" />
-      </div>
+  <div class="row">
+    <div>
+      <label>Max matches per player</label>
+      <input id="maxMatches" type="number" value="20" />
     </div>
+    <div>
+      <label>Concurrency (checks at once)</label>
+      <input id="concurrency" type="number" value="3" />
+    </div>
+  </div>
 
-    <button id="run">Run</button>
-    <button id="downloadCsv" disabled>Download CSV</button>
+  <button id="run">Run</button>
+  <button id="downloadCsv" disabled>Download CSV</button>
 
-    <h3>Output</h3>
-    <pre id="out">—</pre>
+  <h3>Status</h3>
+  <pre id="status">—</pre>
+  <h3>Output</h3>
+  <pre id="out">—</pre>
 
-    <script>
-      const out = document.getElementById("out");
-      const btn = document.getElementById("run");
-      const dl = document.getElementById("downloadCsv");
-      let lastCsv = "";
+  <script>
+    const out = document.getElementById("out");
+    const statusEl = document.getElementById("status");
+    const btn = document.getElementById("run");
+    const dl = document.getElementById("downloadCsv");
+    let lastCsv = "";
 
-      btn.onclick = async () => {
-        dl.disabled = true;
-        out.textContent = "Running… this can take a while for many players.";
-        const urls = document.getElementById("urls").value
-          .split(/\r?\n/)
-          .map(s => s.trim())
-          .filter(Boolean);
-        const maxMatches = Number(document.getElementById("maxMatches").value || 40);
-        const delay = Number(document.getElementById("delay").value || 1.5);
-
-        try {
-          const res = await fetch("/.netlify/functions/pom", {
-            method: "POST",
-            headers: { "content-type": "application/json", "accept": "application/json" },
-            body: JSON.stringify({ urls, maxMatches, delay })
-          });
-
-          // Read raw text first to avoid "Unexpected end of JSON input"
-          const text = await res.text();
-          let data = null;
-          try { data = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
-
-          if (!res.ok) {
-            out.textContent = `HTTP ${res.status} ${res.statusText}\n` +
-              (data ? JSON.stringify(data, null, 2) : (text || "(empty response)"));
-            return;
-          }
-
-          if (!data) {
-            out.textContent = "Empty response from function (possibly a timeout). Try fewer URLs or smaller maxMatches.";
-            return;
-          }
-
-          lastCsv = data.csv || "";
-          dl.disabled = !lastCsv;
-          out.textContent = JSON.stringify(data, null, 2);
-        } catch (e) {
-          out.textContent = "Network/parse error: " + e;
+    function csvFromBundles(bundles){
+      const headers = ["player_name","player_url","match_url","match_title","league_label","match_datetime_utc","rating"];
+      const lines = [headers.join(",")];
+      for (const b of bundles) {
+        const pname = (b.player_name || "").replace(/,/g, " ");
+        const purl = b.player_url || "";
+        for (const r of b.pom_2025_26_domestic || []) {
+          lines.push([pname, purl, r.match_url || "", (r.match_title || "").replace(/,/g, " "),
+            (r.league_label || "").replace(/,/g, " "), r.match_datetime_utc || "", r.rating == null ? "" : String(r.rating)].join(","));
         }
+      }
+      return lines.join("\n");
+    }
+
+    async function runChecksForPlayer(player) {
+      const { player_url, player_name, match_urls } = player;
+      const limit = Number(document.getElementById("concurrency").value || 3);
+      const queue = [...match_urls];
+      const results = [];
+      let inFlight = 0;
+      let done = 0;
+
+      return new Promise((resolve) => {
+        const pump = async () => {
+          if (queue.length === 0 && inFlight === 0) return resolve(results);
+          while (inFlight < limit && queue.length) {
+            const matchUrl = queue.shift();
+            inFlight++;
+            fetch("/.netlify/functions/check", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ playerName: player_name, matchUrl })
+            })
+            .then(r => r.json())
+            .then(d => { results.push(d); })
+            .catch(e => { results.push({ match_url: matchUrl, error: String(e) }); })
+            .finally(() => {
+              inFlight--; done++;
+              statusEl.textContent = `Checking ${player_name}: ${done}/${match_urls.length} matches…`;
+              pump();
+            });
+          }
+        };
+        pump();
+      });
+    }
+
+    btn.onclick = async () => {
+      dl.disabled = true;
+      out.textContent = "—";
+      statusEl.textContent = "Discovering match URLs…";
+
+      const urls = document.getElementById("urls").value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      const maxMatches = Number(document.getElementById("maxMatches").value || 20);
+
+      // 1) Discover
+      let playersResp;
+      try {
+        const r = await fetch("/.netlify/functions/discover", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ urls, maxMatches })
+        });
+        playersResp = await r.json();
+      } catch (e) {
+        statusEl.textContent = "Discover failed: " + e;
+        return;
+      }
+
+      const players = (playersResp.players || []).map(p => ({
+        player_url: p.player_url,
+        player_name: p.player_name,
+        match_urls: p.match_urls || [],
+        debug: p.debug || {}
+      }));
+
+      statusEl.textContent = `Discovered: ` + players.map(p =>
+        `${p.player_name}: ${p.match_urls.length} matches (anchors:${p.debug.anchors||0}, nextData:${p.debug.nextData||0}, html:${p.debug.htmlRegex||0})`
+      ).join(" | ");
+
+      // 2) Check (fan-out)
+      const bundles = [];
+      for (const p of players) {
+        const checked = await runChecksForPlayer(p);
+        const filtered = checked.filter(r => r.league_allowed && r.within_season_2025_26 && r.player_is_pom);
+        bundles.push({
+          player_url: p.player_url,
+          player_name: p.player_name,
+          checked_matches: checked.length,
+          pom_2025_26_domestic_count: filtered.length,
+          pom_2025_26_domestic: filtered,
+          raw: checked
+        });
+      }
+
+      // 3) Summarise + CSV
+      const totals = bundles.map(b => ({ player_name: b.player_name, total: b.pom_2025_26_domestic_count }));
+      const summary = {
+        players_processed: bundles.length,
+        total_pom_hits_2025_26_domestic: bundles.reduce((a,b)=>a+(b.pom_2025_26_domestic_count||0),0)
       };
 
-      dl.onclick = () => {
-        if (!lastCsv) return;
-        const blob = new Blob([lastCsv], { type: "text/csv" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "pom_results_2025_26.csv";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      };
-    </script>
-  </body>
+      lastCsv = csvFromBundles(bundles);
+      dl.disabled = !lastCsv;
+
+      out.textContent = JSON.stringify({ results: bundles, totals, summary }, null, 2);
+      statusEl.textContent = "Done.";
+    };
+
+    dl.onclick = () => {
+      if (!lastCsv) return;
+      const blob = new Blob([lastCsv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "pom_results_2025_26.csv";
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    };
+  </script>
+</body>
 </html>
