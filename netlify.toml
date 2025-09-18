@@ -1,5 +1,5 @@
 [build]
-  command = "npm ci"
+  command = "npm install"
   publish = "public"
 
 [build.environment]
