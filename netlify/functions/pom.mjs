@@ -164,14 +164,14 @@ export async function handler(event){
     const { urls=[], maxMatches=60, delay=1.5 } = event.httpMethod==="POST" ? JSON.parse(event.body||"{}") : (event.queryStringParameters||{});
     if(!urls.length || !Array.isArray(urls)) return { statusCode:400, body: JSON.stringify({ error:"Provide body { urls: [ ... ] }" }) };
 
-    // Launch Lambda-compatible Chromium for Playwright
-    const execPath = await chromium.executablePath();
-    const browser = await pwChromium.launch({
-      args: chromium.args,
-      executablePath: execPath,
-      headless: chromium.headless,
-    });
-    const context = await browser.newContext();
+// Launch Lambda-compatible Chromium for Playwright
+const execPath = await chromium.executablePath();
+const browser = await pwChromium.launch({
+  executablePath: execPath,
+  args: chromium.args,
+  headless: true,          // ✅ MUST be a boolean for Playwright
+});
+const context = await browser.newContext();
 
     const allResults=[];
     for(const url of urls){
