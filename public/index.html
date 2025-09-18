@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>FotMob POM (2025–26)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+      textarea, input, button { width: 100%; padding: .6rem; margin: .3rem 0; }
+      pre { background: #f6f8fa; padding: 1rem; overflow: auto; }
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+      @media (max-width: 640px){ .row { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <h1>FotMob Player-of-the-Match (Top-5 leagues, 2025–26)</h1>
+
+    <label>Player URLs (one per line)</label>
+    <textarea id="urls" rows="8" placeholder="https://www.fotmob.com/players/1467236/lamine-yamal
+https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
+
+    <div class="row">
+      <div>
+        <label>Max matches per player</label>
+        <input id="maxMatches" type="number" value="60" />
+      </div>
+      <div>
+        <label>Delay (seconds) between pages</label>
+        <input id="delay" type="number" step="0.1" value="1.5" />
+      </div>
+    </div>
+
+    <button id="run">Run</button>
+    <button id="downloadCsv" disabled>Download CSV</button>
+
+    <h3>Output</h3>
+    <pre id="out">—</pre>
+
+    <script>
+      const out = document.getElementById("out");
+      const btn = document.getElementById("run");
+      const dl = document.getElementById("downloadCsv");
+
+      let lastCsv = "";
+
+      btn.onclick = async () => {
+        dl.disabled = true;
+        out.textContent = "Running… this can take a while for many players.";
+        const urls = document.getElementById("urls").value
+          .split(/\r?\n/)
+          .map(s => s.trim())
+          .filter(Boolean);
+        const maxMatches = Number(document.getElementById("maxMatches").value || 60);
+        const delay = Number(document.getElementById("delay").value || 1.5);
+
+        try {
+          const res = await fetch("/.netlify/functions/pom", {
+            method: "POST",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify({ urls, maxMatches, delay })
+          });
+          const data = await res.json();
+          lastCsv = data.csv || "";
+          dl.disabled = !lastCsv;
+          out.textContent = JSON.stringify(data, null, 2);
+        } catch (e) {
+          out.textContent = "Error: " + e;
+        }
+      };
+
+      dl.onclick = () => {
+        if (!lastCsv) return;
+        const blob = new Blob([lastCsv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "pom_results_2025_26.csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      };
+    </script>
+  </body>
+</html>
