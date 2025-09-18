@@ -224,71 +224,98 @@ async function extractPlayerName(page) {
   } catch { return ""; }
 }
 
-/**
- * Try to collect match URLs robustly:
- * 1) Click "All matches" (if present)
- * 2) First attempt: pick any <a href="/match/...">
- * 3) Fallback: click visible rows/cards and record page.url() if it navigates to /match/...
- */
-async function collectMatchLinksRobust(page, maxLinks, maxScrolls = 10) {
+// Grab /match/<id> in multiple ways; return { urls, debug }
+async function collectMatchLinksMulti(page, maxLinks, maxScrolls = 10) {
   const hrefs = new Set();
+  const debug = { anchors: 0, nextData: 0, htmlRegex: 0, clickedRows: 0 };
 
-  // 0) Ensure we're on the match list section (desktop layout)
+  // 0) Try to switch to a list view of matches if there's a toggle
   try {
-    const allMatches = page.getByText(/All matches/i);
+    const allMatches = page.getByText(/All matches|Matches|Fixtures/i).first();
     if ((await allMatches.count()) > 0) {
-      await allMatches.first().click({ timeout: 2000 });
+      await allMatches.click({ timeout: 2000 }).catch(() => {});
       await smallPause(400);
     }
   } catch {}
 
-  // 1) Try plain <a> links
-  for (let i = 0; i < maxScrolls; i++) {
+  // 1) Scroll and collect <a href="/match/...">
+  for (let i = 0; i < maxScrolls && hrefs.size < maxLinks; i++) {
     try { await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)); } catch {}
-    await smallPause(500);
+    await smallPause(600);
 
     const links = await page
       .locator('a[href*="/match/"]')
       .evaluateAll((els) => Array.from(new Set(els.map((e) => e.href))));
+    debug.anchors += links.length;
     for (const h of links) {
       hrefs.add(h);
-      if (hrefs.size >= maxLinks) return Array.from(hrefs).slice(0, maxLinks);
+      if (hrefs.size >= maxLinks) return { urls: Array.from(hrefs).slice(0, maxLinks), debug };
     }
   }
 
-  // 2) Fallback: click rows/cards that look like matches
-  //    Limit candidates to avoid timeouts
-  const container = page.locator("section", { hasText: "Match stats" }).first();
-  const candidates = container
-    .locator('a, [role="link"], [role="button"], article, li, div[tabindex], div[class*="row"], tr');
+  // 2) Parse Next.js bootstrap data for any "/match/<id>"
+  try {
+    const raw = await page.evaluate(() => {
+      try {
+        if (window.__NEXT_DATA__) return JSON.stringify(window.__NEXT_DATA__);
+        const el = document.getElementById("__NEXT_DATA__");
+        return el ? el.textContent : null;
+      } catch { return null; }
+    });
+    if (raw) {
+      try {
+        const str = typeof raw === "string" ? raw : JSON.stringify(raw);
+        const re = /\/match\/(\d+)/g;
+        let m;
+        const nextUrls = new Set();
+        while ((m = re.exec(str)) !== null) {
+          nextUrls.add(`https://www.fotmob.com/match/${m[1]}`);
+        }
+        debug.nextData = nextUrls.size;
+        for (const u of nextUrls) {
+          hrefs.add(u);
+          if (hrefs.size >= maxLinks) return { urls: Array.from(hrefs).slice(0, maxLinks), debug };
+        }
+      } catch {}
+    }
+  } catch {}
 
-  const candCount = Math.min(await candidates.count(), maxLinks * 3); // cap probes
-  for (let i = 0; i < candCount && hrefs.size < maxLinks; i++) {
+  // 3) Regex over full HTML (as final fallback)
+  try {
+    const html = await page.content();
+    const re = /href="\/match\/(\d+)"/g;
+    let m; let fromHtml = 0;
+    while ((m = re.exec(html)) !== null) {
+      hrefs.add(`https://www.fotmob.com/match/${m[1]}`);
+      fromHtml++;
+      if (hrefs.size >= maxLinks) break;
+    }
+    debug.htmlRegex = fromHtml;
+    if (hrefs.size >= maxLinks) return { urls: Array.from(hrefs).slice(0, maxLinks), debug };
+  } catch {}
+
+  // 4) As a last resort, probe-click some candidate rows/cards and record navigation
+  const candidates = page.locator('a, [role="link"], [role="button"], article, li, div[tabindex], div[class*="row"], tr');
+  const limit = Math.min(await candidates.count(), maxLinks * 3);
+  for (let i = 0; i < limit && hrefs.size < maxLinks; i++) {
     const el = candidates.nth(i);
     try {
-      await el.scrollIntoViewIfNeeded({ timeout: 2000 });
-    } catch {}
-    // Try a click-navigate-capture-return loop
-    try {
-      const nav = page.waitForNavigation({ timeout: 3500 });
-      await el.click({ timeout: 1500 });
-      await nav.catch(() => null);
+      await el.scrollIntoViewIfNeeded({ timeout: 1500 });
+      const nav = page.waitForNavigation({ timeout: 3500 }).catch(() => null);
+      await el.click({ timeout: 1200 }).catch(() => {});
+      await nav;
       const urlNow = page.url();
       if (urlNow.includes("/match/")) {
         hrefs.add(urlNow);
-        // go back to player page
-        await page.goBack({ timeout: 7000 });
-        await page.waitForLoadState("domcontentloaded");
+        debug.clickedRows++;
+        await page.goBack({ timeout: 7000 }).catch(() => {});
+        await page.waitForLoadState("domcontentloaded").catch(() => {});
         await smallPause(300);
-      } else {
-        // maybe it didn't navigate; just continue
       }
-    } catch {
-      // ignore and move on
-    }
+    } catch {}
   }
 
-  return Array.from(hrefs).slice(0, maxLinks);
+  return { urls: Array.from(hrefs).slice(0, maxLinks), debug };
 }
 
 /** =======================
@@ -344,19 +371,21 @@ async function processPlayer(context, playerUrl, maxLinks, delay) {
   const page = await context.newPage();
   let playerName = "Unknown";
   const results = [];
+  const debug = { anchors: 0, nextData: 0, htmlRegex: 0, clickedRows: 0 };
   try {
     await page.goto(playerUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
     await acceptCookiesEverywhere(page);
 
-    // force desktop-like layout so matches table renders fully
-    try {
-      await page.setViewportSize({ width: 1360, height: 2200 });
-    } catch {}
+    // Prefer desktop-like layout
+    try { await page.setViewportSize({ width: 1360, height: 2200 }); } catch {}
+    try { await page.waitForLoadState("networkidle", { timeout: 8000 }); } catch {}
 
     playerName = (await extractPlayerName(page)) || "Unknown";
 
-    const matchLinks = await collectMatchLinksRobust(page, maxLinks, 12);
-    for (const href of matchLinks) {
+    const { urls, debug: dbg } = await collectMatchLinksMulti(page, maxLinks, 12);
+    Object.assign(debug, dbg);
+
+    for (const href of urls) {
       const info = await processMatch(context, href, playerName, delay);
       results.push(info);
     }
@@ -375,6 +404,7 @@ async function processPlayer(context, playerUrl, maxLinks, delay) {
     pom_2025_26_domestic_count: filtered.length,
     pom_2025_26_domestic: filtered,
     raw: results,
+    debug, // <— NEW: shows how many links each method found
   };
 }
 
@@ -444,7 +474,7 @@ export async function handler(event) {
     // Force a common desktop UA to avoid "lite" DOM variants
     const context = await browser.newContext({
       userAgent:
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit(537.36) Chrome/119.0.0.0 Safari/537.36",
       viewport: { width: 1360, height: 2200 },
       locale: "en-US",
     });
@@ -470,20 +500,4 @@ export async function handler(event) {
     const totals = allResults.map(b => ({ player_name: b.player_name, total: b.pom_2025_26_domestic_count }));
     const summary = {
       players_processed: allResults.length,
-      total_pom_hits_2025_26_domestic: allResults.reduce((a, b) => a + (b.pom_2025_26_domestic_count || 0), 0),
-    };
-    const csv = toCsv(allResults);
-
-    return {
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ results: allResults, totals, summary, csv }),
-    };
-  } catch (e) {
-    return {
-      statusCode: 500,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ error: String(e) }),
-    };
-  }
-}
+      total_pom_hits_2025_26_domestic: allResu_
