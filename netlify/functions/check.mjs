@@ -1,122 +1,187 @@
-import { chromium as pwChromium } from "playwright-core";
-import chromium from "@sparticuz/chromium";
+// netlify/functions/check.mjs
+// Checks a single match: Is the given player POTM and/or the highest rating?
+// Restricts to Top-5 leagues and 2025–26 season (UTC window below).
 
-const ALLOWED_LEAGUES = new Set(["premier league", "bundesliga", "laliga", "la liga", "serie a", "ligue 1"]);
-const SEASON_START = new Date(Date.UTC(2025, 6, 1, 0, 0, 0));      // 2025-07-01
-const SEASON_END   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59));  // 2026-06-30
-const POM_REGEXES = [/player of the match/i, /man of the match/i, /jugador(?:a)? del partido/i, /joueur du match/i];
-const EMOJI_HINTS = ["🏆", "⭐"];
+const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]);
+const SEASON_START = new Date(Date.UTC(2025, 6, 1, 0, 0, 0));   // 2025-07-01
+const SEASON_END   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59)); // 2026-06-30
 
-function norm(s = "") { return s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase(); }
-function leagueIsAllowed(label = "") { const n = norm(label); for (const a of ALLOWED_LEAGUES) if (n.includes(a)) return true; return false; }
+const UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
+const HDRS = {
+  accept: "application/json",
+  "accept-language": "en-GB,en;q=0.9",
+  "user-agent": UA,
+  referer: "https://www.fotmob.com/",
+};
 
-async function acceptCookies(page) {
-  const names = [/Accept.*/i, /Agree.*/i, /Allow all.*/i, /Got it.*/i, /I understand.*/i, /Continue.*/i];
-  for (const rx of names) { try { const b = page.getByRole("button", { name: rx }); if ((await b.count()) > 0) { await b.first().click({ timeout: 1500 }); break; } } catch {} }
-  for (const f of page.frames()) { for (const rx of names) { try { const b = f.getByRole("button", { name: rx }); if ((await b.count()) > 0) { await b.first().click({ timeout: 1500 }); break; } } catch {} } }
-  try { const t = page.locator("text=/accept all|accept|agree/i"); if ((await t.count()) > 0) await t.first().click({ timeout: 1200 }); } catch {}
-}
-function findInObj(obj, keys) {
-  if (Array.isArray(obj)) { for (const it of obj) { const f = findInObj(it, keys); if (f) return f; } }
-  else if (obj && typeof obj === "object") { for (const [k, v] of Object.entries(obj)) { if (keys.has(k) && (typeof v === "string" || typeof v === "number")) return String(v); const f = findInObj(v, keys); if (f) return f; } }
-  return null;
-}
-async function parseMatchDatetime(page) {
-  try {
-    const scripts = page.locator('script[type="application/ld+json"]'); const cnt = await scripts.count();
-    for (let i = 0; i < cnt; i++) { const raw = await scripts.nth(i).textContent(); if (!raw) continue; try { const data = JSON.parse(raw); const ts = findInObj(data, new Set(["startDate","startTime","start_date"])); if (ts) { const d = new Date(ts); if (!Number.isNaN(d.getTime())) return d; } } catch {} }
-  } catch {}
-  try {
-    const times = page.locator("time"); const c = await times.count();
-    for (let i = 0; i < c; i++) { const dt = await times.nth(i).getAttribute("datetime"); if (dt) { const d = new Date(dt); if (!Number.isNaN(d.getTime())) return d; } }
-  } catch {}
-  try {
-    const t = await page.title(); const body = await page.evaluate(() => document.body.innerText || "");
-    for (const s of [t, body]) { if (!s) continue; const d = new Date(s); if (!Number.isNaN(d.getTime())) return d; }
-  } catch {}
-  return null;
-}
-async function parseMatchCompetition(page) {
-  try {
-    const texts = await page.locator('a[href*="/league"], a[href*="/leagues"], a[href*="/table"], a[href*="/tournament"]').allTextContents();
-    for (const t of texts) if (leagueIsAllowed(t)) return t.trim();
-  } catch {}
-  try {
-    const scripts = page.locator('script[type="application/ld+json"]'); const cnt = await scripts.count();
-    for (let i = 0; i < cnt; i++) { const raw = await scripts.nth(i).textContent(); if (!raw) continue; try { const data = JSON.parse(raw); const name = findInObj(data, new Set(["name"])); if (name && leagueIsAllowed(name)) return name.trim(); } catch {} }
-  } catch {}
-  try {
-    const body = await page.evaluate(() => document.body.innerText || "");
-    for (const a of ALLOWED_LEAGUES) if (norm(body).includes(a)) return a;
-  } catch {}
-  return null;
-}
-async function findPom(page, playerName) {
-  let label = page.locator('[aria-label*="player of the match" i], [aria-label*="man of the match" i]');
-  if ((await label.count()) === 0) {
-    label = null;
-    for (const rx of POM_REGEXES) {
-      const loc = page.locator(`text=/${rx.source}/i`);
-      if ((await loc.count()) > 0) { label = loc; break; }
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function fetchJSON(url, retry = 3) {
+  let last;
+  for (let i = 0; i <= retry; i++) {
+    try {
+      const res = await fetch(url, { headers: HDRS });
+      const txt = await res.text();
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} :: ${txt?.slice(0,200) || ""}`);
+      return JSON.parse(txt);
+    } catch (e) {
+      last = e;
+      await sleep(200 + 400 * i);
     }
   }
-  if (!label) {
-    for (const em of EMOJI_HINTS) {
-      const loc = page.locator(`text=${em}`);
-      if ((await loc.count()) > 0) { label = loc; break; }
-    }
+  throw last || new Error("fetch failed");
+}
+
+function parseMatchIdFromUrl(matchUrl) {
+  try { return (new URL(matchUrl)).pathname.split("/").filter(Boolean).at(-1); }
+  catch { return null; }
+}
+function norm(s=""){ return s.normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim(); }
+
+function getAllRatings(json) {
+  const arrs = [];
+  const home = json?.content?.playerRatings?.home?.players ?? [];
+  const away = json?.content?.playerRatings?.away?.players ?? [];
+  if (Array.isArray(home)) arrs.push(...home);
+  if (Array.isArray(away)) arrs.push(...away);
+  // Normalize {id, name, rating}
+  return arrs.map(p => ({
+    id: p?.id ?? p?.playerId ?? null,
+    name: p?.name ?? p?.playerName ?? "",
+    rating: (p?.rating != null) ? Number(p.rating) : (p?.stats?.rating != null ? Number(p.stats.rating) : NaN)
+  })).filter(x => x.name || x.id != null);
+}
+
+function findPOTM(json) {
+  const cand =
+    json?.general?.playerOfTheMatch ??
+    json?.content?.matchFacts?.playerOfTheMatch ??
+    null;
+  if (cand && (cand.id != null || cand.name)) return cand;
+
+  // Fallback: pick max rating as POTM if not present
+  const ratings = getAllRatings(json);
+  if (!ratings.length) return null;
+  ratings.sort((a,b) => (Number(b.rating||0) - Number(a.rating||0)));
+  const top = ratings[0];
+  if (!top) return null;
+  return { id: top.id ?? null, name: top.name ?? null, by: "max_rating_fallback", rating: top.rating ?? null };
+}
+
+function extractLeagueId(json) {
+  // Common places
+  const a = Number(json?.general?.leagueId ?? json?.general?.tournamentId ?? json?.general?.competitionId ?? NaN);
+  if (Number.isFinite(a)) return a;
+  // Try other spots if present
+  const b = Number(json?.content?.leagueId ?? json?.content?.tournamentId ?? NaN);
+  if (Number.isFinite(b)) return b;
+  return null;
+}
+
+function extractLeagueName(json) {
+  return json?.general?.leagueName || json?.general?.tournamentName || json?.general?.competitionName || null;
+}
+
+function extractKickoff(json) {
+  // Try ISO or timestamp fields commonly present
+  const iso = json?.general?.matchTimeUTC || json?.general?.startTimeUTC || json?.general?.startDate;
+  if (iso) {
+    const d = new Date(iso);
+    if (!Number.isNaN(d.getTime())) return d;
   }
-  if (!label) return { found: false, rating: null, isPom: false };
-  let text = "";
-  try {
-    text = await label.first().evaluate(el => { const host = el.closest("section,article,div") || el; return host.innerText || ""; });
-  } catch {
-    try { text = await page.evaluate(() => document.body.innerText || ""); } catch { text = ""; }
+  // Try epoch seconds/ms
+  const ts = Number(json?.general?.matchTime || json?.general?.kickoff);
+  if (Number.isFinite(ts)) {
+    const d = new Date(ts > 1e12 ? ts : ts*1000);
+    if (!Number.isNaN(d.getTime())) return d;
   }
-  const isPom = norm(text).includes(norm(playerName));
-  const m = text.match(/\b(\d{1,2}(?:\.\d)?)\b/);
-  const rating = m ? Number(m[1]) : null;
-  return { found: true, rating: Number.isNaN(rating) ? null : rating, isPom };
+  return null;
 }
 
 export async function handler(event) {
   try {
-    const payload = event.httpMethod === "POST"
-      ? JSON.parse(event.body || "{}")
-      : { playerName: event.queryStringParameters?.playerName, matchUrl: event.queryStringParameters?.matchUrl };
-
-    const { playerName, matchUrl } = payload;
-    if (!playerName || !matchUrl) {
-      return { statusCode: 400, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: "Provide { playerName, matchUrl }" }) };
+    let payload = {};
+    if (event.httpMethod === "POST") {
+      try { payload = JSON.parse(event.body || "{}"); }
+      catch { return { statusCode: 400, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: "Invalid JSON body" }) }; }
+    } else {
+      payload = {
+        playerId: Number(event.queryStringParameters?.playerId || NaN),
+        playerName: event.queryStringParameters?.playerName || "",
+        matchUrl: event.queryStringParameters?.matchUrl || ""
+      };
     }
 
-    const execPath = await chromium.executablePath();
-    const browser = await pwChromium.launch({ executablePath: execPath, args: chromium.args, headless: true });
-    const context = await browser.newContext({
-      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-      viewport: { width: 1280, height: 1600 },
-      locale: "en-US",
-    });
-    const page = await context.newPage();
+    const playerId = Number(payload.playerId || NaN);
+    const playerName = String(payload.playerName || "").trim();
+    const matchUrl = String(payload.matchUrl || "").trim();
 
-    const out = { match_url: matchUrl, match_title: null, league_label: null, match_datetime_utc: null, within_season_2025_26: false, league_allowed: false, player_of_the_match_block_found: false, player_is_pom: false, rating: null, error: null };
-    try {
-      await page.goto(matchUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
-      await acceptCookies(page);
-      await page.waitForSelector("time, :text-matches('Match facts'), :text-matches('Match Facts'), :text-matches('Facts')", { timeout: 12000 }).catch(() => {});
-      out.match_title = await page.title();
-
-      const league = await parseMatchCompetition(page); out.league_label = league; out.league_allowed = Boolean(league && leagueIsAllowed(league));
-      const mdt = await parseMatchDatetime(page); if (mdt) { out.match_datetime_utc = mdt.toISOString(); out.within_season_2025_26 = mdt >= SEASON_START && mdt <= SEASON_END; }
-      const { found, rating, isPom } = await findPom(page, playerName); out.player_of_the_match_block_found = found; out.player_is_pom = isPom; out.rating = rating;
-    } catch (e) {
-      out.error = String(e);
-    } finally {
-      await page.close();
-      await browser.close();
+    if (!matchUrl || (!playerName && !Number.isFinite(playerId))) {
+      return { statusCode: 400, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: "Provide { playerId or playerName, matchUrl }" }) };
     }
 
-    return { statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(out) };
+    const matchId = parseMatchIdFromUrl(matchUrl);
+    if (!matchId) {
+      return { statusCode: 400, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: "Invalid matchUrl" }) };
+    }
+
+    const json = await fetchJSON(`https://www.fotmob.com/api/matchDetails?matchId=${matchId}`);
+    const leagueId = extractLeagueId(json);
+    const league_allowed = leagueId != null && TOP5_LEAGUE_IDS.has(Number(leagueId));
+    const league_label = extractLeagueName(json) || null;
+
+    const dt = extractKickoff(json);
+    const match_datetime_utc = dt ? dt.toISOString() : null;
+    const within_season_2025_26 = dt ? (dt >= SEASON_START && dt <= SEASON_END) : false;
+
+    // Ratings & POTM
+    const ratings = getAllRatings(json);
+    const maxRating = ratings.length ? Math.max(...ratings.map(r => Number(r.rating||0))) : null;
+
+    // Locate this player's rating
+    const pidOK = Number.isFinite(playerId);
+    const nPlayer = norm(playerName);
+    const me = ratings.find(r =>
+      (pidOK && Number(r.id) === playerId) ||
+      (!!nPlayer && norm(r.name) === nPlayer)
+    ) || null;
+
+    // POTM
+    const potm = findPOTM(json);
+    const player_is_pom =
+      potm
+        ? ((pidOK && Number(potm.id) === playerId) ||
+           (!!nPlayer && potm.name && norm(potm.name) === nPlayer))
+        : false;
+
+    const has_highest_rating =
+      me && maxRating != null
+        ? Number(me.rating||0) === Number(maxRating)
+        : false;
+
+    const match_title =
+      json?.general?.matchName ||
+      `${json?.general?.homeTeam?.name ?? ""} vs ${json?.general?.awayTeam?.name ?? ""}`.trim();
+
+    return {
+      statusCode: 200,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        match_url: matchUrl,
+        match_title,
+        league_id: leagueId,
+        league_label,
+        match_datetime_utc,
+        league_allowed,
+        within_season_2025_26,
+        player_is_pom,
+        has_highest_rating,
+        player_rating: me?.rating ?? null,
+        max_rating: maxRating,
+        potm_name: potm?.name ?? null,
+        potm_id: potm?.id ?? null
+      })
+    };
   } catch (e) {
     return { statusCode: 500, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: String(e) }) };
   }
