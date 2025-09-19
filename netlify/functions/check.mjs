@@ -1,6 +1,6 @@
 // netlify/functions/check.mjs
-// Robust POTM (and Highest Rating when possible) with HTML (__NEXT_DATA__) fallback
-// + Safe name handling (fixes "s.normalize is not a function")
+// Robust POTM (and Highest Rating when possible) with HTML (__NEXT_DATA__) fallback.
+// Works with both match URL styles and blocked API (401/403).
 
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1, 0, 0, 0));     // 2025-07-01
@@ -22,30 +22,7 @@ const HDRS_HTML = {
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-// --- safe name handling ---
-function toStrName(v) {
-  if (v == null) return "";
-  if (typeof v === "string") return v;
-  if (typeof v === "number") return String(v);
-  if (typeof v === "object") {
-    // common shapes from FotMob
-    if (v.fullName) return String(v.fullName);
-    if (v.longName) return String(v.longName);
-    if (v.shortName) return String(v.shortName);
-    if (v.name) return String(v.name);
-    if (v.playerName) return String(v.playerName);
-    const combo = [v.firstName, v.lastName].filter(Boolean).join(" ");
-    if (combo) return combo;
-    try { return JSON.stringify(v); } catch { /* ignore */ }
-  }
-  try { return String(v); } catch { return ""; }
-}
-function norm(v) {
-  const s = toStrName(v);
-  // normalize only on strings; toStrName guarantees string
-  return s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-}
+const norm = (s) => String(s ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
 
 async function fetchJSON(url, retry = 2) {
   let lastErr;
@@ -62,6 +39,7 @@ async function fetchJSON(url, retry = 2) {
   }
   throw lastErr || new Error("fetch failed");
 }
+
 async function fetchText(url, retry = 2) {
   let lastErr;
   for (let i = 0; i <= retry; i++) {
@@ -83,12 +61,14 @@ function extractFirstNumericIdFromPath(pathname="") {
   const m = pathname.match(/\/match\/(\d{5,10})(?:\/|$)/i);
   return m ? m[1] : null;
 }
+
 async function resolveMatchIdFromUrl(urlStr) {
   try {
     const u = new URL(urlStr);
     const id = extractFirstNumericIdFromPath(u.pathname);
     if (id) return { matchId: id, finalUrl: urlStr, html: null };
 
+    // Not /match/<id> → load HTML to find id
     const { finalUrl, html } = await fetchText(urlStr);
     const id2 = extractFirstNumericIdFromPath(new URL(finalUrl).pathname);
     if (id2) return { matchId: id2, finalUrl, html };
@@ -102,127 +82,206 @@ async function resolveMatchIdFromUrl(urlStr) {
   }
 }
 
-// ----- readers -----
+// ---------- Readers ----------
 function ratingsFromJson(json) {
-  const arrs = [];
-  const home = json?.content?.playerRatings?.home?.players ?? [];
-  const away = json?.content?.playerRatings?.away?.players ?? [];
-  if (Array.isArray(home)) arrs.push(...home);
-  if (Array.isArray(away)) arrs.push(...away);
-  return arrs.map(p => ({
-    id: p?.id ?? p?.playerId ?? null,
-    name: toStrName(p?.name ?? p?.playerName ?? ""),
-    rating: p?.rating != null ? Number(p.rating)
-          : p?.stats?.rating != null ? Number(p.stats.rating)
-          : NaN,
-  })).filter(x => x.name || x.id != null);
+  // search both canonical and variant shapes
+  const out = [];
+  const push = (arr) => {
+    if (!Array.isArray(arr)) return;
+    for (const p of arr) {
+      const id = p?.id ?? p?.playerId ?? p?.player?.id ?? null;
+      const name = p?.name ?? p?.playerName ?? p?.player?.name ?? "";
+      const rating =
+        p?.rating != null ? Number(p.rating) :
+        p?.stats?.rating != null ? Number(p.stats.rating) :
+        p?.playerRating != null ? Number(p.playerRating) :
+        NaN;
+      if (name || id != null) out.push({ id, name, rating });
+    }
+  };
+
+  // canonical
+  const home = json?.content?.playerRatings?.home?.players;
+  const away = json?.content?.playerRatings?.away?.players;
+  push(home); push(away);
+
+  // sometimes flattened
+  push(json?.playerRatings?.home?.players);
+  push(json?.playerRatings?.away?.players);
+
+  // generic arrays with rating + (id|name)
+  const stack = [json];
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node || typeof node !== "object") continue;
+    for (const [k,v] of Object.entries(node)) {
+      if (!v) continue;
+      if (Array.isArray(v)) {
+        // push arrays with objects that look like ratings
+        if (v.length && typeof v[0] === "object" && ("rating" in v[0] || "playerRating" in v[0])) push(v);
+        for (const it of v) if (it && typeof it === "object") stack.push(it);
+      } else if (typeof v === "object") stack.push(v);
+    }
+  }
+
+  return out;
 }
+
 function pickLeagueId(obj) {
-  const cands = [
-    obj?.general?.leagueId, obj?.general?.tournamentId, obj?.general?.competitionId,
-    obj?.content?.leagueId, obj?.content?.tournamentId, obj?.leagueId, obj?.tournamentId
-  ];
-  for (const v of cands) {
-    const n = Number(v);
-    if (Number.isFinite(n)) return n;
+  const stack=[obj];
+  while (stack.length) {
+    const n = stack.pop();
+    if (!n || typeof n !== "object") continue;
+    for (const [k,v] of Object.entries(n)) {
+      const kk = String(k).toLowerCase();
+      if (/(leagueid|tournamentid|competitionid)$/.test(kk)) {
+        const num = Number(v); if (Number.isFinite(num)) return num;
+      }
+      if (v && typeof v === "object") stack.push(v);
+    }
   }
   return null;
 }
 function pickLeagueName(obj) {
-  return obj?.general?.leagueName || obj?.general?.tournamentName || obj?.general?.competitionName ||
-         obj?.content?.leagueName || obj?.content?.tournamentName || obj?.leagueName || obj?.tournamentName || null;
-}
-function pickKickoff(obj) {
-  const candStr = obj?.general?.matchTimeUTC || obj?.general?.startTimeUTC || obj?.general?.startDate ||
-                  obj?.content?.matchTimeUTC || obj?.content?.startTimeUTC || obj?.content?.startDate ||
-                  obj?.matchTimeUTC || obj?.startTimeUTC || obj?.startDate || null;
-  if (candStr) { const d = new Date(candStr); if (!isNaN(d)) return d; }
-  const candNum = Number(obj?.general?.matchTime ?? obj?.general?.kickoff ?? obj?.kickoff ?? obj?.matchTime);
-  if (Number.isFinite(candNum)) { const d = new Date(candNum > 1e12 ? candNum : candNum*1000); if (!isNaN(d)) return d; }
+  const stack=[obj];
+  while (stack.length) {
+    const n = stack.pop();
+    if (!n || typeof n !== "object") continue;
+    for (const [k,v] of Object.entries(n)) {
+      const kk = String(k).toLowerCase();
+      if (/(leaguename|tournamentname|competitionname)$/.test(kk) && typeof v === "string") return v;
+      if (v && typeof v === "object") stack.push(v);
+    }
+  }
   return null;
 }
-function explicitPOTM(obj) {
-  return obj?.general?.playerOfTheMatch ?? obj?.content?.matchFacts?.playerOfTheMatch ?? null;
+function pickKickoff(obj) {
+  // ISO-ish string
+  const stack=[obj];
+  while (stack.length) {
+    const n = stack.pop();
+    if (!n || typeof n !== "object") continue;
+    for (const [k,v] of Object.entries(n)) {
+      const kk = String(k).toLowerCase();
+      if (/^(matchtimeutc|starttimeutc|startdate|kickoffiso|utcstart|dateutc)$/.test(kk) && typeof v === "string") {
+        const d = new Date(v); if (!isNaN(d)) return d;
+      }
+      if (/^(matchtime|kickoff|epoch|timestamp)$/.test(kk) && Number.isFinite(Number(v))) {
+        const ts = Number(v); const d = new Date(ts > 1e12 ? ts : ts*1000); if (!isNaN(d)) return d;
+      }
+      if (v && typeof v === "object") stack.push(v);
+    }
+  }
+  return null;
 }
 
-// ----- NEXT helpers -----
+function explicitPOTM(obj) {
+  // look for playerOfTheMatch anywhere
+  const stack=[obj];
+  while (stack.length) {
+    const n = stack.pop();
+    if (!n || typeof n !== "object") continue;
+    if (n.playerOfTheMatch && (n.playerOfTheMatch.id != null || n.playerOfTheMatch.name)) {
+      return n.playerOfTheMatch;
+    }
+    if (n.matchFacts && n.matchFacts.playerOfTheMatch) {
+      const p = n.matchFacts.playerOfTheMatch;
+      if (p && (p.id != null || p.name)) return p;
+    }
+    for (const v of Object.values(n)) if (v && typeof v === "object") stack.push(v);
+  }
+  return null;
+}
+
+function deriveTitle(obj, html) {
+  const g = obj?.general;
+  const n = g?.matchName;
+  if (n) return n;
+  const ht = g?.homeTeam?.name || obj?.homeTeam?.name || "";
+  const at = g?.awayTeam?.name || obj?.awayTeam?.name || "";
+  if (ht || at) return `${ht || "?"} vs ${at || "?"}`;
+  if (html) {
+    const m = html.match(/<title>([^<]+)<\/title>/i);
+    if (m) return m[1].replace(/\s+/g," ").trim();
+  }
+  return "vs";
+}
+
 function extractNextDataString(html) {
   const m = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
   return m ? m[1] : null;
 }
-function safeJSON(str){ try { return JSON.parse(str); } catch { return null; } }
+function safeJSON(str) { try { return JSON.parse(str); } catch { return null; } }
 
-function deepScanNextForMatch(root, targetId /* optional */) {
-  const tgt = targetId ? String(targetId) : null;
-  const res = { blocks: [], potm: null, ratings: [], leagueId: null, leagueName: null, kickoff: null };
+function deepScanNext(root) {
+  // Returns a merged "best effort" data-like block plus helpers
+  const results = { blocks: [], ratings: [], potm: null, leagueId: null, leagueName: null, kickoff: null };
+  const stack=[root];
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node || typeof node!=="object") continue;
 
-  const pushRatings = (json) => {
-    const rs = ratingsFromJson(json);
-    if (rs && rs.length) res.ratings = rs;
-  };
+    // league + time rolling capture
+    if (results.leagueId == null) { const lid = pickLeagueId(node); if (lid != null) results.leagueId = lid; }
+    if (!results.leagueName) { const ln = pickLeagueName(node); if (ln) results.leagueName = ln; }
+    if (!results.kickoff) { const ko = pickKickoff(node); if (ko) results.kickoff = ko; }
 
-  const st = [root];
-  while (st.length) {
-    const node = st.pop();
-    if (!node || typeof node !== "object") continue;
-
-    if (res.leagueId == null) { const lid = pickLeagueId(node); if (lid != null) res.leagueId = lid; }
-    if (!res.leagueName) { const ln = pickLeagueName(node); if (ln) res.leagueName = ln; }
-    if (!res.kickoff) { const ko = pickKickoff(node); if (ko) res.kickoff = ko; }
-
-    if (!res.potm) {
+    if (!results.potm) {
       const p = explicitPOTM(node);
-      if (p && (p.id != null || p.name)) res.potm = p;
+      if (p) results.potm = p;
     }
 
-    const looks =
+    // candidate block
+    const looksLike =
       (node.general && (node.content?.playerRatings || node.content?.matchFacts || node.content?.lineups)) ||
       (node.content && (node.content.playerRatings || node.content.matchFacts));
-    if (looks) {
-      const idGuess = node?.general?.matchId ?? node?.general?.id ?? node?.content?.matchId ?? node?.matchId ?? null;
-      if (!tgt || (idGuess != null && String(idGuess) === tgt)) {
-        res.blocks.push(node);
-        pushRatings(node);
-      }
-    }
+    if (looksLike) results.blocks.push(node);
 
-    for (const k of Object.keys(node)) {
-      const v = node[k];
-      if (!v) continue;
-      if (Array.isArray(v)) for (const it of v) if (it && typeof it === "object") st.push(it);
-      else if (typeof v === "object") st.push(v);
+    // push ratings if present
+    const rs = ratingsFromJson(node);
+    if (rs.length) results.ratings = rs;
+
+    for (const v of Object.values(node)) {
+      if (v && typeof v === "object") stack.push(v);
+      if (Array.isArray(v)) for (const it of v) if (it && typeof it === "object") stack.push(it);
     }
   }
 
-  return res;
+  // synthesize minimal block if none found
+  const block =
+    results.blocks[0] ||
+    { general: { leagueId: results.leagueId, leagueName: results.leagueName, matchTimeUTC: results.kickoff?.toISOString?.() || null }, content: {} };
+  if (results.ratings.length && !block.content.playerRatings) {
+    block.content.playerRatings = { home:{players:[]}, away:{players: results.ratings} };
+  }
+  if (results.potm && !block.general?.playerOfTheMatch && !block.content?.matchFacts?.playerOfTheMatch) {
+    if (!block.general) block.general = {};
+    block.general.playerOfTheMatch = results.potm;
+  }
+
+  return { data: block, helpers: results };
 }
 
-async function nextFallbackJSON(matchUrl, knownHtml, matchId /* optional */) {
+async function nextFallbackJSON(matchUrl, knownHtml) {
   const { html } = knownHtml ? { finalUrl: matchUrl, html: knownHtml } : await fetchText(matchUrl);
-  const ndStr = extractNextDataString(html);
-  if (!ndStr) {
-    // last-resort: regex-only POTM from raw HTML
-    const rx = /"playerOfTheMatch"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"[^}]*"id"\s*:\s*(\d+)/i;
+  const nd = extractNextDataString(html);
+  if (!nd) {
+    // last resort: direct regex for POTM in HTML
+    const rx = /"playerOfTheMatch"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"[^}]*?(?:"id"\s*:\s*(\d+))?/i;
     const m = html.match(rx);
-    if (m) return { data: null, source: "next_html_regex", potm: { name: m[1], id: Number(m[2]) }, ratings: [] };
+    if (m) {
+      const potm = { name: m[1], id: m[2] ? Number(m[2]) : null };
+      return { data: { general: { playerOfTheMatch: potm } }, html, source: "next_html_regex" };
+    }
     throw new Error("NEXT_DATA not found in HTML");
   }
-  const nd = safeJSON(ndStr);
-  if (!nd) throw new Error("NEXT_DATA JSON parse failed");
+  const obj = safeJSON(nd);
+  if (!obj) throw new Error("NEXT_DATA JSON parse failed");
 
-  let targetId = matchId ? String(matchId) : null;
-  if (!targetId) {
-    const m1 = html.match(/"matchId"\s*:\s*(\d{5,10})/i) || html.match(/\/match\/(\d{5,10})/i);
-    if (m1) targetId = m1[1];
-  }
-
-  const scan = deepScanNextForMatch(nd, targetId);
-  const dataLike =
-    scan.blocks[0] ||
-    { general: { leagueId: scan.leagueId, leagueName: scan.leagueName, matchTimeUTC: scan.kickoff?.toISOString?.() || null },
-      content: scan.ratings.length ? { playerRatings: { home:{players:[]}, away:{players: scan.ratings} } } : {} };
-
-  return { data: dataLike, source: "next_html", potmOverride: scan.potm || null, ratingsOverride: scan.ratings };
+  const scan = deepScanNext(obj);
+  const data = scan.data;
+  const source = "next_html";
+  return { data, html, source };
 }
 
 // ---------- handler ----------
@@ -248,31 +307,23 @@ export async function handler(event) {
       return { statusCode: 400, headers: { "content-type":"application/json" }, body: JSON.stringify({ error:"Provide { playerId or playerName, matchUrl }" }) };
     }
 
+    // Resolve numeric matchId (also returns HTML if we fetched)
     const { matchId, finalUrl, html: maybeHtml } = await resolveMatchIdFromUrl(matchUrl);
     if (!matchId) {
       return { statusCode: 400, headers: { "content-type":"application/json" }, body: JSON.stringify({ error:"Could not resolve numeric matchId from matchUrl", matchUrl }) };
     }
 
     // 1) API fast path
-    let data = null, source = "api";
+    let data = null, htmlUsed = maybeHtml, source = "api";
     try {
       data = await fetchJSON(`https://www.fotmob.com/api/matchDetails?matchId=${matchId}`);
     } catch {
       // 2) HTML fallback with deep scan
-      const { data: d2, source: s2, potmOverride, ratingsOverride } =
-        await nextFallbackJSON(finalUrl, maybeHtml || null, matchId);
-      data = d2; source = s2 || "next_html";
-      if (potmOverride && (!data?.general?.playerOfTheMatch && !data?.content?.matchFacts?.playerOfTheMatch)) {
-        if (!data.general) data.general = {};
-        data.general.playerOfTheMatch = potmOverride;
-      }
-      if (ratingsOverride && ratingsOverride.length && !data?.content?.playerRatings) {
-        if (!data.content) data.content = {};
-        data.content.playerRatings = { home:{players:[]}, away:{players: ratingsOverride} };
-      }
+      const fb = await nextFallbackJSON(finalUrl, maybeHtml || null);
+      data = fb.data; htmlUsed = fb.html; source = fb.source || "next_html";
     }
 
-    // League / time
+    // Extract fields
     const leagueId = pickLeagueId(data);
     const league_label = pickLeagueName(data) || null;
     const league_allowed = leagueId != null && TOP5_LEAGUE_IDS.has(Number(leagueId));
@@ -281,7 +332,6 @@ export async function handler(event) {
     const match_datetime_utc = dt ? dt.toISOString() : null;
     const within_season_2025_26 = dt ? (dt >= SEASON_START && dt <= SEASON_END) : false;
 
-    // Ratings (if present)
     const ratings = ratingsFromJson(data);
     const maxRating = ratings.length ? Math.max(...ratings.map(r => Number(r.rating || 0))) : null;
 
@@ -291,36 +341,31 @@ export async function handler(event) {
       (pidOK && Number(r.id) === playerId) || (!!nPlayer && r.name && norm(r.name) === nPlayer)
     ) || null;
 
-    // POTM: explicit preferred, else max rating
-    const expl = explicitPOTM(data);
-    const potm = expl || (ratings.length ? (() => {
-      const rs = [...ratings].sort((a,b)=>Number(b.rating||0)-Number(a.rating||0));
+    const explicitP = data?.general?.playerOfTheMatch ?? data?.content?.matchFacts?.playerOfTheMatch ?? null;
+    const potm = explicitP || (ratings.length ? (() => {
+      const rs = [...ratings].sort((a,b)=>Number(b.rating||0) - Number(a.rating||0));
       return rs[0] ? { id: rs[0].id ?? null, name: rs[0].name ?? null, by:"max_rating_fallback", rating: rs[0].rating ?? null } : null;
     })() : null);
 
-    const potm_name_text = toStrName(potm?.name ?? potm ?? "");
     const player_is_pom =
-      !!potm &&
-      (
-        (pidOK && Number(potm.id) === playerId) ||
-        (!!nPlayer && norm(potm_name_text) === nPlayer)
-      );
+      potm
+        ? ((pidOK && Number(potm.id) === playerId) ||
+           (!!nPlayer && potm.name && norm(potm.name) === nPlayer))
+        : false;
 
     const has_highest_rating =
       me && maxRating != null ? Number(me.rating || 0) === Number(maxRating) : false;
 
-    const match_title =
-      data?.general?.matchName ||
-      `${toStrName(data?.general?.homeTeam?.name ?? "")} vs ${toStrName(data?.general?.awayTeam?.name ?? "")}`.trim() || null;
+    const match_title = deriveTitle(data, htmlUsed);
 
     return {
       statusCode: 200,
       headers: { "content-type":"application/json" },
       body: JSON.stringify({
         match_url: matchUrl,
-        resolved_match_id: matchId,
+        resolved_match_id: String(matchId),
         match_title,
-        league_id: leagueId,
+        league_id: leagueId ?? null,
         league_label,
         match_datetime_utc,
         league_allowed,
@@ -329,8 +374,7 @@ export async function handler(event) {
         has_highest_rating,
         player_rating: me?.rating ?? null,
         max_rating: maxRating,
-        potm_name: potm?.name ?? null,
-        potm_name_text,
+        potm_name: potm?.name || potm?.fullName ? { fullName: potm.fullName || potm.name } : (potm || null),
         potm_id: potm?.id ?? null,
         source
       })
