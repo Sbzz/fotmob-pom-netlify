@@ -1,10 +1,9 @@
 // netlify/functions/check.mjs
-// POTM + Highest + Correct per-match player stats (Top-5 leagues, 2025–26)
-// - Robust NEXT_HTML fallback (unchanged POTM behavior)
-// - Accurate goals/NPG/PG/assists/YC/RC via multi-shape event parsing
-// - Better FMP (minutes >= 90) via deep scan of all player objects
-//
-// NOTE: No changes needed in index.html
+// POTM + Correct per-match player stats (Top-5, 2025–26)
+// - Uses player's own box-score row (from playerRatings) for: goals, penalty goals, assists, YC, RC, minutes
+// - Falls back to deep event scan ONLY when a stat is missing
+// - FMP = minutesPlayed >= 90
+// - Keeps robust __NEXT_DATA__ fallback that gave you correct POTM
 
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1, 0, 0, 0));     // 2025-07-01
@@ -36,10 +35,7 @@ async function fetchJSON(url, retry = 2) {
       const txt = await res.text();
       if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} :: ${txt?.slice(0,200) || ""}`);
       return JSON.parse(txt);
-    } catch (e) {
-      lastErr = e;
-      await sleep(200 + 300*i);
-    }
+    } catch (e) { lastErr = e; await sleep(200 + 300*i); }
   }
   throw lastErr || new Error("fetch failed");
 }
@@ -53,10 +49,7 @@ async function fetchText(url, retry = 2) {
       if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
       if (!txt) throw new Error("Empty HTML");
       return { finalUrl: res.url || url, html: txt };
-    } catch (e) {
-      lastErr = e;
-      await sleep(200 + 300*i);
-    }
+    } catch (e) { lastErr = e; await sleep(200 + 300*i); }
   }
   throw lastErr || new Error("fetch failed (html)");
 }
@@ -71,7 +64,6 @@ async function resolveMatchIdFromUrl(urlStr) {
     const u = new URL(urlStr);
     const id = extractFirstNumericIdFromPath(u.pathname);
     if (id) return { matchId: id, finalUrl: urlStr, html: null };
-
     const { finalUrl, html } = await fetchText(urlStr);
     const id2 = extractFirstNumericIdFromPath(new URL(finalUrl).pathname);
     if (id2) return { matchId: id2, finalUrl, html };
@@ -85,7 +77,7 @@ async function resolveMatchIdFromUrl(urlStr) {
   }
 }
 
-// ---------- Ratings & metadata readers ----------
+// ---------- Ratings & helpers ----------
 function coerceRatingRow(p) {
   if (!p || typeof p !== "object") return null;
   const id = p?.id ?? p?.playerId ?? p?.player?.id ?? null;
@@ -101,22 +93,18 @@ function ratingsFromJson(json) {
   const out = [];
   const pushArr = (arr) => {
     if (!Array.isArray(arr)) return;
-    for (const item of arr) {
-      const row = coerceRatingRow(item);
-      if (row) out.push(row);
-    }
+    for (const item of arr) { const row = coerceRatingRow(item); if (row) out.push(row); }
   };
   pushArr(json?.content?.playerRatings?.home?.players);
   pushArr(json?.content?.playerRatings?.away?.players);
   pushArr(json?.playerRatings?.home?.players);
   pushArr(json?.playerRatings?.away?.players);
-
-  // deep scan for arrays resembling ratings
+  // deep scan fallback
   const stack = [json];
   while (stack.length) {
     const node = stack.pop();
     if (!node || typeof node !== "object") continue;
-    for (const [k,v] of Object.entries(node)) {
+    for (const v of Object.values(node)) {
       if (!v) continue;
       if (Array.isArray(v)) {
         if (v.length && v.some(x => x && typeof x === "object" && (("rating" in x) || ("playerRating" in x) || (x.stats && typeof x.stats==="object" && "rating" in x.stats)))) {
@@ -134,13 +122,10 @@ function ratingsFromJson(json) {
 function pickLeagueId(obj) {
   const stack=[obj];
   while (stack.length) {
-    const n = stack.pop();
-    if (!n || typeof n !== "object") continue;
+    const n = stack.pop(); if (!n || typeof n !== "object") continue;
     for (const [k,v] of Object.entries(n)) {
       const kk = String(k).toLowerCase();
-      if (/(leagueid|tournamentid|competitionid)$/.test(kk)) {
-        const num = Number(v); if (Number.isFinite(num)) return num;
-      }
+      if (/(leagueid|tournamentid|competitionid)$/.test(kk)) { const num = Number(v); if (Number.isFinite(num)) return num; }
       if (v && typeof v === "object") stack.push(v);
     }
   }
@@ -149,8 +134,7 @@ function pickLeagueId(obj) {
 function pickLeagueName(obj) {
   const stack=[obj];
   while (stack.length) {
-    const n = stack.pop();
-    if (!n || typeof n !== "object") continue;
+    const n = stack.pop(); if (!n || typeof n !== "object") continue;
     for (const [k,v] of Object.entries(n)) {
       const kk = String(k).toLowerCase();
       if (/(leaguename|tournamentname|competitionname)$/.test(kk) && typeof v === "string") return v;
@@ -162,16 +146,11 @@ function pickLeagueName(obj) {
 function pickKickoff(obj) {
   const stack=[obj];
   while (stack.length) {
-    const n = stack.pop();
-    if (!n || typeof n !== "object") continue;
+    const n = stack.pop(); if (!n || typeof n !== "object") continue;
     for (const [k,v] of Object.entries(n)) {
       const kk = String(k).toLowerCase();
-      if (/^(matchtimeutc|starttimeutc|startdate|kickoffiso|utcstart|dateutc)$/.test(kk) && typeof v === "string") {
-        const d = new Date(v); if (!isNaN(d)) return d;
-      }
-      if (/^(matchtime|kickoff|epoch|timestamp)$/.test(kk) && Number.isFinite(Number(v))) {
-        const ts = Number(v); const d = new Date(ts > 1e12 ? ts : ts*1000); if (!isNaN(d)) return d;
-      }
+      if (/^(matchtimeutc|starttimeutc|startdate|kickoffiso|utcstart|dateutc)$/.test(kk) && typeof v === "string") { const d = new Date(v); if (!isNaN(d)) return d; }
+      if (/^(matchtime|kickoff|epoch|timestamp)$/.test(kk) && Number.isFinite(Number(v))) { const ts = Number(v); const d = new Date(ts > 1e12 ? ts : ts*1000); if (!isNaN(d)) return d; }
       if (v && typeof v === "object") stack.push(v);
     }
   }
@@ -181,15 +160,9 @@ function pickKickoff(obj) {
 function explicitPOTM(obj) {
   const stack=[obj];
   while (stack.length) {
-    const n = stack.pop();
-    if (!n || typeof n !== "object") continue;
-    if (n.playerOfTheMatch && (n.playerOfTheMatch.id != null || n.playerOfTheMatch.name || n.playerOfTheMatch.fullName)) {
-      return n.playerOfTheMatch;
-    }
-    if (n.matchFacts && n.matchFacts.playerOfTheMatch) {
-      const p = n.matchFacts.playerOfTheMatch;
-      if (p && (p.id != null || p.name || p.fullName)) return p;
-    }
+    const n = stack.pop(); if (!n || typeof n !== "object") continue;
+    if (n.playerOfTheMatch && (n.playerOfTheMatch.id != null || n.playerOfTheMatch.name || n.playerOfTheMatch.fullName)) return n.playerOfTheMatch;
+    if (n.matchFacts && n.matchFacts.playerOfTheMatch) { const p = n.matchFacts.playerOfTheMatch; if (p && (p.id != null || p.name || p.fullName)) return p; }
     for (const v of Object.values(n)) if (v && typeof v === "object") stack.push(v);
   }
   return null;
@@ -201,14 +174,11 @@ function deriveTitle(obj, html) {
   const ht = g?.homeTeam?.name || obj?.homeTeam?.name || "";
   const at = g?.awayTeam?.name || obj?.awayTeam?.name || "";
   if (ht || at) return `${ht || "?"} vs ${at || "?"}`;
-  if (html) {
-    const m = html.match(/<title>([^<]+)<\/title>/i);
-    if (m) return m[1].replace(/\s+/g," ").trim();
-  }
+  if (html) { const m = html.match(/<title>([^<]+)<\/title>/i); if (m) return m[1].replace(/\s+/g," ").trim(); }
   return "vs";
 }
 
-// ---------- NEW: robust minutes for a specific player ----------
+// ---------- Deep walker (fallbacks) ----------
 function* walkObjects(root){
   const stack=[root]; const seen=new Set();
   while(stack.length){
@@ -231,64 +201,54 @@ function playerObjectMatches(obj, playerId, playerName){
   return idOk || nameOk;
 }
 
-function extractMinutesFromPlayerObj(obj){
-  const nums = [];
-  const pickNum = (v)=>Number.isFinite(Number(v)) ? Number(v) : null;
+function firstNumber(obj, path) {
+  // path like "stats.goals"; tries multiple alternative paths via array
+  const paths = Array.isArray(path) ? path : [path];
+  for (const p of paths) {
+    let cur = obj;
+    for (const key of String(p).split(".")) {
+      if (!cur || typeof cur !== "object") { cur = null; break; }
+      cur = cur[key];
+    }
+    const n = Number(cur);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
 
-  // common keys
+// Fallback: minutes by scanning any matching player object
+function extractMinutesDeep(root, playerId, playerName){
+  let best = null;
   const keys = [
     "minutesPlayed","minsPlayed","timeOnPitch","timePlayed","playedMinutes","minutes",
     "stats.minutesPlayed","stats.minsPlayed","performance.minutesPlayed","performance.minsPlayed"
   ];
-
-  for(const k of keys){
-    let v = obj;
-    for(const part of k.split(".")){
-      if(!v || typeof v!=="object") { v = null; break; }
-      v = v[part];
-    }
-    const n = pickNum(v);
-    if(n!=null) nums.push(n);
-  }
-
-  // sweep any numeric keys that look like minutes
-  for(const [k,v] of Object.entries(obj)){
-    if(typeof v==="number" && /min/.test(k.toLowerCase())) nums.push(v);
-    if(v && typeof v==="object"){
-      for(const [kk,vv] of Object.entries(v)){
-        if(typeof vv==="number" && /min/.test(kk.toLowerCase())) nums.push(vv);
-      }
-    }
-  }
-
-  return nums.length ? Math.max(...nums) : null;
-}
-
-function getPlayerMinutes(root, playerId, playerName){
-  let best = null;
   for(const obj of walkObjects(root)){
-    if (!playerObjectMatches(obj, playerId, playerName)) continue;
-    const m = extractMinutesFromPlayerObj(obj);
-    if(m!=null && (best==null || m>best)) best = m;
+    if(!playerObjectMatches(obj, playerId, playerName)) continue;
+    for(const k of keys){
+      let cur=obj;
+      for(const part of k.split(".")){ if(!cur || typeof cur!=="object"){ cur=null; break; } cur=cur[part]; }
+      const n = Number(cur);
+      if(Number.isFinite(n)) best = (best==null||n>best) ? n : best;
+    }
+    // sweep numeric fields that look like minutes
+    for(const [k,v] of Object.entries(obj)){
+      if(typeof v==="number" && /min/.test(k.toLowerCase())) best = (best==null||v>best) ? v : best;
+    }
   }
-  return best; // may be null
+  return best;
 }
 
-// ---------- NEW: robust events extraction (goals/assists/cards) ----------
-function asId(v){ return Number.isFinite(Number(v)) ? Number(v) : null; }
-function asStr(v){ return (typeof v==="string") ? v : (v?.name || v?.fullName || null); }
-
-function pushIf(arr, val){ if(val!=null) arr.push(val); }
-
+// Events (used only as last resort for PG/NPG/assists/cards)
 function parseEventActors(e){
-  // returns { scorersIds[], scorersNames[], assistIds[], assistNames[], ownGoal:boolean, penalty:boolean, kind:"goal|yellow|red|second_yellow|null" }
   const out = { scorersIds:[], scorersNames:[], assistIds:[], assistNames:[], ownGoal:false, penalty:false, kind:null };
-
-  // raw strings
-  const typeRaw = String(e.type || e.eventType || e.incidentType || e.detailType || e.card || e.cardType || e.goalType || "").toLowerCase();
+  const typeRaw = String(e.type || e.eventType || e.detailType || e.card || e.cardType || e.goalType || "").toLowerCase();
   const detailRaw = String(e.detail || e.reason || e.description || "").toLowerCase();
 
-  // common scorer fields
+  const asId = (v)=>Number.isFinite(Number(v)) ? Number(v) : null;
+  const asStr = (v)=> (typeof v==="string"?v:(v?.name||v?.fullName||null));
+  const pushIf=(arr,val)=>{ if(val!=null) arr.push(val); };
+
   pushIf(out.scorersIds, asId(e.playerId));
   pushIf(out.scorersIds, asId(e.mainPlayerId));
   pushIf(out.scorersIds, asId(e.player?.id));
@@ -301,125 +261,68 @@ function parseEventActors(e){
   pushIf(out.scorersNames, asStr(e.scorer));
   pushIf(out.scorersNames, asStr(e.goalScorer));
 
-  // assists variants
   pushIf(out.assistIds, asId(e.assistId));
-  pushIf(out.assistIds, asId(e.secondaryPlayerId));
   pushIf(out.assistIds, asId(e.assist?.id));
   pushIf(out.assistIds, asId(e.assist1?.id));
   pushIf(out.assistIds, asId(e.assist2?.id));
+  pushIf(out.assistIds, asId(e.secondaryPlayerId));
 
   pushIf(out.assistNames, asStr(e.assist));
-  pushIf(out.assistNames, asStr(e.assistName));
   pushIf(out.assistNames, asStr(e.assist1));
   pushIf(out.assistNames, asStr(e.assist2));
+  pushIf(out.assistNames, asStr(e.assistName));
   pushIf(out.assistNames, asStr(e.secondaryPlayer));
 
-  // role-based arrays (e.players / e.actors / e.involvedPlayers)
   const roleArrays = [e.players, e.actors, e.involvedPlayers, e.participants, e.relatedPlayers].filter(Array.isArray);
   for(const arr of roleArrays){
     for(const it of arr){
       const role = String(it?.role || it?.type || "").toLowerCase();
       const pid = asId(it?.id || it?.playerId || it?.player?.id);
       const pname = asStr(it?.name || it?.playerName || it?.player);
-      if (role.includes("assist")) { pushIf(out.assistIds, pid); pushIf(out.assistNames, pname); }
-      if (role.includes("scorer") || role.includes("goal")) { pushIf(out.scorersIds, pid); pushIf(out.scorersNames, pname); }
-      if ((it?.isAssist) === true) { pushIf(out.assistIds, pid); pushIf(out.assistNames, pname); }
-      if ((it?.isScorer) === true || (it?.isGoal) === true) { pushIf(out.scorersIds, pid); pushIf(out.scorersNames, pname); }
+      if (role.includes("assist") || (it?.isAssist===true)) { pushIf(out.assistIds, pid); pushIf(out.assistNames, pname); }
+      if (role.includes("scorer") || role.includes("goal") || (it?.isScorer===true) || (it?.isGoal===true)) { pushIf(out.scorersIds, pid); pushIf(out.scorersNames, pname); }
     }
   }
 
-  // flags
   out.penalty = !!(e.isPenalty || typeRaw.includes("pen") || detailRaw.includes("penalty"));
   out.ownGoal = !!(typeRaw.includes("own") || detailRaw.includes("own goal"));
 
-  // classify type
-  if (typeRaw.includes("goal") || e.goal === true || e.scorer || e.goalScorer) {
-    out.kind = out.penalty ? "penalty_goal" : "goal";
-  } else if (typeRaw.includes("yellow")) {
-    out.kind = typeRaw.includes("second") ? "second_yellow" : "yellow";
-  } else if (typeRaw.includes("red")) {
-    out.kind = "red";
-  } else if (/assist/.test(typeRaw) || /assist/.test(detailRaw) || e.assist || e.assistId || e.assist1 || e.assist2) {
-    // Some payloads have separate "assist" entries; we don't count these directly as events,
-    // but we keep assist actors above so they get tallied if present.
-    // Leave out.kind as null (assist will be counted via goal event links too).
-  }
+  if (typeRaw.includes("goal") || e.goal === true || e.scorer || e.goalScorer) out.kind = out.penalty ? "penalty_goal" : "goal";
+  else if (typeRaw.includes("yellow")) out.kind = typeRaw.includes("second") ? "second_yellow" : "yellow";
+  else if (typeRaw.includes("red")) out.kind = "red";
 
   return out;
 }
-
 function collectEventsDeep(root){
-  const out = [];
+  const out=[];
   for(const node of walkObjects(root)){
-    // look for typical event arrays
     for(const [k,v] of Object.entries(node)){
       if (!v || !Array.isArray(v)) continue;
-      // candidate keys by name or by shape
       const key = String(k).toLowerCase();
-      if (!/(event|incident|timeline|goal|booking|card|summary)/.test(key)) {
-        // if array of generic objects but not eventy, skip
-        if (!(v.length && typeof v[0]==="object")) continue;
-      }
-      for(const e of v){
-        if (!e || typeof e !== "object") continue;
-        const actors = parseEventActors(e);
-        const minute = Number.isFinite(Number(e.minute)) ? Number(e.minute)
-                      : Number.isFinite(Number(e.time)) ? Number(e.time)
-                      : (e.clock && Number.isFinite(Number(e.clock.minute)) ? Number(e.clock.minute) : null);
-        out.push({ ...actors, minute });
-      }
+      if (!/(event|incident|timeline|goal|booking|card|summary)/.test(key)) continue;
+      for(const e of v){ if (e && typeof e==="object") out.push(parseEventActors(e)); }
     }
   }
   return out;
 }
-
-function tallyPlayerStats(root, playerId, playerName) {
-  const events = collectEventsDeep(root);
+function tallyFromEvents(root, playerId, playerName){
+  const ev = collectEventsDeep(root);
   const nTarget = norm(playerName || "");
-  let goals = 0, pen = 0, assists = 0, yc = 0, rc = 0;
-
   const isMeId = (id)=> (playerId!=null && id!=null && Number(id)===Number(playerId));
   const isMeName = (nm)=> (!!nTarget && nm && norm(nm)===nTarget);
-
-  for(const e of events){
-    // Goals to our player (exclude own goals)
-    const scorerHit =
-      e.scorersIds.some(isMeId) || e.scorersNames.some(isMeName);
-    if (scorerHit && (e.kind === "goal" || e.kind === "penalty_goal") && !e.ownGoal) {
-      goals++; if (e.kind === "penalty_goal") pen++;
-    }
-
-    // Assists credited to our player
-    const assistHit =
-      e.assistIds.some(isMeId) || e.assistNames.some(isMeName);
+  let goals=0, pen=0, assists=0, yc=0, rc=0;
+  for(const e of ev){
+    const scorerHit = e.scorersIds.some(isMeId) || e.scorersNames.some(isMeName);
+    const assistHit = e.assistIds.some(isMeId) || e.assistNames.some(isMeName);
+    if (scorerHit && (e.kind==="goal" || e.kind==="penalty_goal") && !e.ownGoal) { goals++; if (e.kind==="penalty_goal") pen++; }
     if (assistHit) assists++;
-
-    // Cards to our player
-    if (scorerHit || assistHit || e.scorersNames.length || e.assistNames.length) {
-      // not reliable to assume cards come with scorer/assist context
-    }
-    // Better: detect if the event references our player in *either* scorer/assist sets,
-    // OR (common for card entries) via player fields (already parsed inside parseEventActors)
-    const involvedAsPlayer =
-      scorerHit || assistHit ||
-      e.scorersIds.some(isMeId) || e.assistIds.some(isMeId) ||
-      e.scorersNames.some(isMeName) || e.assistNames.some(isMeName);
-
-    // For cards, some feeds don't put the player in scorer/assist slots; so check again:
-    if (!involvedAsPlayer) {
-      // try to infer from generic fields by re-parsing with player-first bias
-      // (already done inside parseEventActors via playerId/playerName → scorers* lists)
-    }
-
-    if (involvedAsPlayer) {
-      if (e.kind === "yellow") yc++;
-      else if (e.kind === "second_yellow") { yc++; rc++; }
-      else if (e.kind === "red") rc++;
-    }
+    if (scorerHit || assistHit){ /* not enough for cards */ }
+    // try cards via either list (some feeds put card owner in "player" slot parsed as scorer)
+    if ((scorerHit || assistHit) && e.kind==="yellow") yc++;
+    if ((scorerHit || assistHit) && e.kind==="second_yellow") { yc++; rc++; }
+    if ((scorerHit || assistHit) && e.kind==="red") rc++;
   }
-
-  const npg = goals - pen;
-  return { goals, penalty_goals: pen, non_penalty_goals: npg, assists, yellow_cards: yc, red_cards: rc };
+  return { goals, pen, assists, yc, rc };
 }
 
 // ---------- __NEXT_DATA__ fallback ----------
@@ -428,7 +331,6 @@ function extractNextDataString(html) {
   return m ? m[1] : null;
 }
 function safeJSON(str) { try { return JSON.parse(str); } catch { return null; } }
-
 function deepScanNext(root) {
   const results = { blocks: [], ratings: [], potm: null, leagueId: null, leagueName: null, kickoff: null };
   const stack=[root];
@@ -469,20 +371,16 @@ function deepScanNext(root) {
     if (!block.general) block.general = {};
     block.general.playerOfTheMatch = results.potm;
   }
-
   return { data: block };
 }
-
 async function nextFallbackJSON(matchUrl, knownHtml) {
   const { html } = knownHtml ? { finalUrl: matchUrl, html: knownHtml } : await fetchText(matchUrl);
   const nd = extractNextDataString(html);
   if (!nd) {
     const rx = /"playerOfTheMatch"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"[^}]*?(?:"id"\s*:\s*(\d+))?/i;
     const m = html.match(rx);
-    if (m) {
-      const potm = { name: m[1], id: m[2] ? Number(m[2]) : null };
-      return { data: { general: { playerOfTheMatch: potm } }, html, source: "next_html_regex" };
-    }
+    if (m) { const potm = { name: m[1], id: m[2] ? Number(m[2]) : null };
+      return { data: { general: { playerOfTheMatch: potm } }, html, source: "next_html_regex" }; }
     throw new Error("NEXT_DATA not found in HTML");
   }
   const obj = safeJSON(nd);
@@ -554,34 +452,42 @@ export async function handler(event) {
     })() : null);
 
     const potmNameText = potm ? (potm.fullName || potm.name || "") : "";
-
     const player_is_pom =
-      potm
-        ? ((pidOK && Number(potm.id) === playerId) ||
-           (!!nPlayer && potmNameText && norm(potmNameText) === nPlayer))
-        : false;
-
-    const has_highest_rating =
-      me && maxRating != null ? Number(me.rating || 0) === Number(maxRating) : false;
+      potm ? ((pidOK && Number(potm.id) === playerId) || (!!nPlayer && potmNameText && norm(potmNameText) === nPlayer)) : false;
 
     const match_title = deriveTitle(data, htmlUsed);
 
-    // Accurate player minutes (FMP)
-    const minutes_played = getPlayerMinutes(data, playerId, playerName);
-    const full_match_played = minutes_played != null ? (Number(minutes_played) >= 90) : false;
+    // ---------- Player stats from player's own row (box score) ----------
+    let goals=null, penGoals=null, assists=null, yc=null, rc=null, minutes=null;
 
-    // Accurate event tallies
-    const tallied = tallyPlayerStats(data, playerId, playerName);
-    const player_stats = {
-      goals: tallied.goals,
-      penalty_goals: tallied.penalty_goals,
-      non_penalty_goals: tallied.non_penalty_goals,
-      assists: tallied.assists,
-      yellow_cards: tallied.yellow_cards,
-      red_cards: tallied.red_cards,
-      minutes_played,
-      full_match_played
-    };
+    if (me && me.raw) {
+      const r = me.raw;
+      goals    = firstNumber(r, ["goals","stats.goals","offensive.goals","summary.goals"]);
+      penGoals = firstNumber(r, ["penaltyGoals","stats.penaltyGoals","penalties.scored","penaltiesGoals","stats.penaltiesScored","stats.penaltyScored"]);
+      assists  = firstNumber(r, ["assists","stats.assists","offensive.assists","summary.assists"]);
+      yc       = firstNumber(r, ["yellowCards","stats.yellowCards","cards.yellow","discipline.yellow","summary.yellowCards"]);
+      // red = straight red + second yellow (if provided)
+      const rcStraight = firstNumber(r, ["redCards","stats.redCards","cards.red","discipline.red","summary.redCards"]) || 0;
+      const rc2ndY     = firstNumber(r, ["secondYellow","stats.secondYellow","cards.secondYellow","discipline.secondYellow","summary.secondYellow"]) || 0;
+      rc = rcStraight + rc2ndY;
+
+      minutes  = firstNumber(r, ["minutesPlayed","stats.minutesPlayed","minsPlayed","playedMinutes","timeOnPitch","timePlayed","performance.minutesPlayed"]);
+    }
+
+    // Fallbacks if any box-score stat is missing
+    if (minutes==null) minutes = extractMinutesDeep(data, playerId, playerName);
+
+    if (goals==null || penGoals==null || assists==null || yc==null || rc==null) {
+      const t = tallyFromEvents(data, playerId, playerName);
+      goals    = goals    ?? t.goals;
+      penGoals = penGoals ?? t.pen;
+      assists  = assists  ?? t.assists;
+      yc       = yc       ?? t.yc;
+      rc       = rc       ?? t.rc;
+    }
+
+    const nonPenGoals = Number(goals || 0) - Number(penGoals || 0);
+    const full_match_played = minutes != null ? (Number(minutes) >= 90) : false;
 
     return {
       statusCode: 200,
@@ -596,14 +502,23 @@ export async function handler(event) {
         league_allowed,
         within_season_2025_26,
         player_is_pom,
-        has_highest_rating,
+        // We keep rating fields for compatibility; UI ignores "highest"
         player_rating: me?.rating ?? null,
         max_rating: maxRating,
         potm_name: potm || null,
         potm_name_text: potmNameText,
         potm_id: potm?.id ?? null,
-        player_stats,
-        source
+        player_stats: {
+          goals: Number(goals||0),
+          penalty_goals: Number(penGoals||0),
+          non_penalty_goals: Number(nonPenGoals||0),
+          assists: Number(assists||0),
+          yellow_cards: Number(yc||0),
+          red_cards: Number(rc||0),
+          minutes_played: minutes==null?null:Number(minutes),
+          full_match_played
+        },
+        source: data?.content ? "api" : "next_html"
       })
     };
   } catch (e) {
