@@ -138,7 +138,8 @@ function deriveTitle(obj, html){
 
 // NEXT fallback
 function extractNextDataString(html){
-  const m=html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>([\\s\\S]*?)<\\/script>/i); return m?m[1]:null;
+  const m = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
+  return m ? m[1] : null;
 }
 function safeJSON(s){ try{ return JSON.parse(s);}catch{ return null; } }
 function mergeUnique(targetArr, addArr){ if(!Array.isArray(addArr)||!addArr.length) return; const key=o=>JSON.stringify(o); const seen=new Set(targetArr.map(key)); for(const o of addArr){ const k=key(o); if(!seen.has(k)){ seen.add(k); targetArr.push(o); } } }
@@ -170,28 +171,57 @@ function buildEnrichedFromNext(root){
 }
 async function nextFallbackJSON(matchUrl, knownHtml){
   const { html } = knownHtml ? { finalUrl:matchUrl, html:knownHtml } : await fetchText(matchUrl);
-  const nds = extractNextDataString(html); if(!nds) throw new Error("NEXT_DATA not found in HTML");
-  const obj = safeJSON(nds); if(!obj) throw new Error("NEXT_DATA JSON parse failed");
-  const enriched = buildEnrichedFromNext(obj);
-  return { data: enriched, html, source: "next_html" };
+  const nds=extractNextDataString(html); if(!nds) throw new Error("NEXT_DATA not found in HTML");
+  const obj=safeJSON(nds); if(!obj) throw new Error("NEXT_DATA JSON parse failed");
+  const enriched=buildEnrichedFromNext(obj);
+  return { data: enriched, html, source:"next_html" };
 }
 
 // events & cards extraction
 function isGoalEventLike(e){ const t=String(e?.type||e?.eventType||e?.goalType||"").toLowerCase(); return t.includes("goal") || e?.goal===true || e?.scorer || e?.goalScorer; }
 function extractGoalsStrict(mf){
-  const out=[]; const push=(e)=>{ const scorerId=asNum(e?.scorer?.id) ?? asNum(e?.scorerId) ?? asNum(e?.playerId) ?? asNum(e?.mainPlayerId) ?? asNum(e?.player?.id) ?? asNum(e?.goalScorer?.id); const scorerName=asStr(e?.scorer)||asStr(e?.scorerName)||asStr(e?.player)||asStr(e?.playerName)||asStr(e?.mainPlayer)||asStr(e?.goalScorer); const assistId=asNum(e?.assist?.id) ?? asNum(e?.assistId) ?? asNum(e?.assistPlayerId) ?? asNum(e?.secondaryPlayerId) ?? asNum(e?.assist1?.id); const assistName=asStr(e?.assist)||asStr(e?.assistName)||asStr(e?.assistPlayer)||asStr(e?.secondaryPlayer)||asStr(e?.assist1); const t=String(e?.type||e?.eventType||e?.goalType||\"\"\").toLowerCase(); const d=String(e?.detail||e?.reason||e?.description||\"\").toLowerCase(); const penalty=!!(e?.isPenalty||t.includes(\"penalt\")); const own=!!(e?.isOwnGoal||t.includes(\"own\")); out.push({scorerId,scorerName,assistId,assistName,penalty,own}); };
-  for(const [k,v] of Object.entries(mf||{})){ if(!Array.isArray(v)) continue; const key=String(k).toLowerCase(); if(/^goals?$|^scorers?$/.test(key)) v.forEach(e=>e&&push(e)); if(/^(events|incidents|timeline|summary)$/.test(key)) v.forEach(e=>{ if(e&&isGoalEventLike(e)) push(e); }); }
+  const out=[];
+  const push=(e)=>{
+    const scorerId=asNum(e?.scorer?.id) ?? asNum(e?.scorerId) ?? asNum(e?.playerId) ?? asNum(e?.mainPlayerId) ?? asNum(e?.player?.id) ?? asNum(e?.goalScorer?.id);
+    const scorerName=asStr(e?.scorer)||asStr(e?.scorerName)||asStr(e?.player)||asStr(e?.playerName)||asStr(e?.mainPlayer)||asStr(e?.goalScorer);
+    const assistId=asNum(e?.assist?.id) ?? asNum(e?.assistId) ?? asNum(e?.assistPlayerId) ?? asNum(e?.secondaryPlayerId) ?? asNum(e?.assist1?.id);
+    const assistName=asStr(e?.assist)||asStr(e?.assistName)||asStr(e?.assistPlayer)||asStr(e?.secondaryPlayer)||asStr(e?.assist1);
+    const t=String(e?.type||e?.eventType||e?.goalType||"").toLowerCase();
+    const penalty=!!(e?.isPenalty || t.includes("penalt"));
+    const own=!!(e?.isOwnGoal || t.includes("own"));
+    out.push({ scorerId, scorerName, assistId, assistName, penalty, own });
+  };
+  for(const [k,v] of Object.entries(mf||{})){
+    if(!Array.isArray(v)) continue;
+    const key=String(k).toLowerCase();
+    if(/^goals?$|^scorers?$/.test(key)) v.forEach(e=>e&&push(e));
+    if(/^(events|incidents|timeline|summary)$/.test(key)) v.forEach(e=>{ if(e && isGoalEventLike(e)) push(e); });
+  }
   return Array.from(new Map(out.map(o=>[JSON.stringify(o),o])).values());
 }
 function extractCardsStrict(mf){
-  const out=[]; const push=(e,kind)=>{ const playerId=asNum(e?.playerId) ?? asNum(e?.player?.id) ?? asNum(e?.mainPlayerId); const playerName=asStr(e?.player)||asStr(e?.playerName)||asStr(e?.mainPlayer); out.push({playerId,playerName,kind}); };
+  const out=[];
+  const push=(e,kind)=>{
+    const playerId=asNum(e?.playerId) ?? asNum(e?.player?.id) ?? asNum(e?.mainPlayerId);
+    const playerName=asStr(e?.player)||asStr(e?.playerName)||asStr(e?.mainPlayer);
+    out.push({ playerId, playerName, kind });
+  };
   for(const [k,v] of Object.entries(mf||{})){
-    if(!Array.isArray(v)) continue; const key=String(k).toLowerCase();
+    if(!Array.isArray(v)) continue;
+    const key=String(k).toLowerCase();
     if(/^cards$|^bookings$/.test(key)){
-      for(const e of v){ const t=String(e?.card||e?.cardType||e?.type||\"\").toLowerCase(); if(t.includes(\"yellow\")) push(e, t.includes(\"second\")?\"second_yellow\":\"yellow\"); else if(t.includes(\"red\")) push(e,\"red\"); }
+      for(const e of v){
+        const t=String(e?.card||e?.cardType||e?.type||"").toLowerCase();
+        if(t.includes("yellow")) push(e, t.includes("second")?"second_yellow":"yellow");
+        else if(t.includes("red")) push(e,"red");
+      }
     }
     if(/^(events|incidents|timeline|summary)$/.test(key)){
-      for(const e of v){ const t=String(e?.card||e?.cardType||e?.type||e?.eventType||\"\").toLowerCase(); if(t.includes(\"yellow\")) push(e, t.includes(\"second\")?\"second_yellow\":\"yellow\"); else if(t.includes(\"red\")) push(e,\"red\"); }
+      for(const e of v){
+        const t=String(e?.card||e?.cardType||e?.type||e?.eventType||"").toLowerCase();
+        if(t.includes("yellow")) push(e, t.includes("second")?"second_yellow":"yellow");
+        else if(t.includes("red")) push(e,"red");
+      }
     }
   }
   return out;
@@ -203,30 +233,31 @@ function readFromStatsArray(row){
   const groups = Array.isArray(row?.stats) ? row.stats : null;
   if(!groups) return out;
 
-  const clean = (s)=>String(s||\"\").toLowerCase().replace(/[^a-z]/g,\"\");
-  const isExpected = (k,l)=> (k.includes(\"expected\") || l.includes(\"expected\") || k===\"xg\" || l===\"xg\" || k===\"xa\" || l===\"xa\" || l.includes(\"xg\") || l.includes(\"xa\"));
+  const clean = (s)=>String(s||"").toLowerCase().replace(/[^a-z]/g,"");
+  const isExpected = (k,l)=> (k.includes("expected") || l.includes("expected") || k==="xg" || l==="xg" || k==="xa" || l==="xa" || l.includes("xg") || l.includes("xa"));
   const isPenaltyCount = (k,l)=>{
-    const good = new Set([\"penaltygoals\",\"penaltiesscored\",\"penaltiesconverted\",\"penscored\",\"pensconverted\"]);
-    const bad  = [\"nonpenalty\",\"penaltieswon\",\"penaltiesconceded\",\"penaltyarea\",\"penaltytouches\"];
+    const good = new Set(["penaltygoals","penaltiesscored","penaltiesconverted","penscored","pensconverted"]);
+    const bad  = ["nonpenalty","penaltieswon","penaltiesconceded","penaltyarea","penaltytouches"];
     if (bad.some(x=>k.includes(x)||l.includes(x))) return false;
     if (good.has(k)) return true;
-    const ltxt=[\"penaltygoals\",\"penaltiesscored\",\"penaltiesconverted\",\"pensscored\",\"pensconverted\"]; return ltxt.some(x=>l===x);
+    const ltxt=["penaltygoals","penaltiesscored","penaltiesconverted","pensscored","pensconverted"];
+    return ltxt.some(x=>l===x);
   };
 
   for(const g of groups){
-    const bag=g?.stats; if(!bag||typeof bag!==\"object\") continue;
+    const bag=g?.stats; if(!bag||typeof bag!=="object") continue;
     for(const [label,obj] of Object.entries(bag)){
-      const keyRaw=String(obj?.key||\"\"); const lblRaw=String(label||\"\");
+      const keyRaw=String(obj?.key||""); const lblRaw=String(label||"");
       const k=clean(keyRaw); const l=clean(lblRaw);
       if(isExpected(k,l)) continue;
       const v=asNum(obj?.stat?.value ?? obj?.value ?? obj?.stat ?? null);
       if(v==null) continue;
 
-      if(k===\"minutesplayed\" || l===\"minutesplayed\"){ if(out.minutes==null) out.minutes=Math.round(v); continue; }
-      if(k===\"goals\" || l===\"goals\"){ if(out.goals==null) out.goals=Math.round(v); continue; }
-      if(k===\"assists\" || l===\"assists\"){ if(out.assists==null) out.assists=Math.round(v); continue; }
-      if(k===\"yellowcards\" || k===\"yellowcard\" || l===\"yellowcards\" || l===\"yellowcard\"){ if(out.yc==null) out.yc=Math.round(v); continue; }
-      if(k===\"redcards\" || k===\"redcard\" || l===\"redcards\" || l===\"redcard\"){ if(out.rc==null) out.rc=Math.round(v); continue; }
+      if(k==="minutesplayed" || l==="minutesplayed"){ if(out.minutes==null) out.minutes=Math.round(v); continue; }
+      if(k==="goals" || l==="goals"){ if(out.goals==null) out.goals=Math.round(v); continue; }
+      if(k==="assists" || l==="assists"){ if(out.assists==null) out.assists=Math.round(v); continue; }
+      if(k==="yellowcards" || k==="yellowcard" || l==="yellowcards" || l==="yellowcard"){ if(out.yc==null) out.yc=Math.round(v); continue; }
+      if(k==="redcards" || k==="redcard" || l==="redcards" || l==="redcard"){ if(out.rc==null) out.rc=Math.round(v); continue; }
       if(isPenaltyCount(k,l)){ if(out.penGoals==null) out.penGoals=Math.round(v); continue; }
     }
   }
@@ -332,14 +363,6 @@ function minutesFromSubsEvents(mf, playerId, playerName){
   return Number.isFinite(mins) ? mins : null;
 }
 
-async function nextFallbackFromUrl(matchUrl, htmlMaybe){
-  const { html } = htmlMaybe ? { finalUrl:matchUrl, html:htmlMaybe } : await fetchText(matchUrl);
-  const nds=extractNextDataString(html); if(!nds) throw new Error("NEXT_DATA not found in HTML");
-  const obj=safeJSON(nds); if(!obj) throw new Error("NEXT_DATA JSON parse failed");
-  const enriched=buildEnrichedFromNext(obj);
-  return { data: enriched, html, source:"next_html" };
-}
-
 export async function handler(event){
   try{
     let payload={};
@@ -363,7 +386,7 @@ export async function handler(event){
     try{
       data = await fetchJSON(`https://www.fotmob.com/api/matchDetails?matchId=${matchId}`);
     }catch{
-      const fb = await nextFallbackFromUrl(finalUrl, maybeHtml||null);
+      const fb = await nextFallbackJSON(finalUrl, maybeHtml||null);
       data = fb.data; htmlUsed = fb.html; source = fb.source || "next_html";
     }
 
@@ -435,7 +458,7 @@ export async function handler(event){
         resolved_match_id: String(matchId),
         match_title,
         league_id,
-        league_label: LEAGUE_LABELS[league_id] || pickLeagueName(data) || null,
+        league_label: league_label,
         match_datetime_utc,
         league_allowed,
         within_season_2025_26,
