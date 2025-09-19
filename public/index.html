@@ -102,7 +102,12 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     </div>
 
     <div class="card">
-      <h3 style="margin-top:0">Summary table (downloadable)</h3>
+      <div class="row" style="justify-content:space-between; align-items:center">
+        <h3 style="margin:0">Summary table (downloadable)</h3>
+        <div class="row" style="margin:-6px 0 8px">
+          <button id="downloadCsvTable" class="btn" disabled>Download table (CSV)</button>
+        </div>
+      </div>
       <div class="muted-small" style="margin-bottom:8px">player name | number of times player of the match</div>
       <table>
         <thead>
@@ -128,6 +133,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     const dlP = document.getElementById("downloadCsvPOM");
     const dlH = document.getElementById("downloadCsvHigh");
     const dlS = document.getElementById("downloadCsvSummary");
+    const dlT = document.getElementById("downloadCsvTable");
 
     let lastCsvP = "", lastCsvH = "", lastCsvS = "";
 
@@ -259,7 +265,6 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     }
 
     async function calendarFallback(fromStr, toStr, chunkDays){
-      // Call our calendar function in chunks and union the match URLs
       function* chunks(from,to,size){
         const a=new Date(Date.UTC(+from.slice(0,4), +from.slice(4,6)-1, +from.slice(6,8)));
         const b=new Date(Date.UTC(+to.slice(0,4), +to.slice(4,6)-1, +to.slice(6,8)));
@@ -287,7 +292,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     // ---------- Main runner ----------
     btnRun.onclick = async ()=>{
       try{
-        btnRun.disabled = true; dlP.disabled = dlH.disabled = dlS.disabled = true;
+        btnRun.disabled = true; dlP.disabled = dlH.disabled = dlS.disabled = dlT.disabled = true;
         lastCsvP = lastCsvH = lastCsvS = "";
         out.textContent = "—"; statusEl.textContent = "Starting…"; summaryBox.textContent = "—"; setTag("Working…","warn");
 
@@ -319,7 +324,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
             if (p.match_urls && p.match_urls.length) return p;
             return { ...p, match_urls: (maxMatchesCap>0? union.slice(0,maxMatchesCap) : union), debug: { ...(p.debug||{}), fallback_calendar:true, fallback_total:union.length } };
           });
-          summaryBox.textContent += `\n(Fallback) Added ${need.length ? need.length : 0} player(s) with ${need.length ? "calendar matches" : ""}.`;
+          summaryBox.textContent += `\n(Fallback) Added calendar matches for ${need.length} player(s).`;
         }
 
         // 3) Check
@@ -369,7 +374,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
         lastCsvP = csvFromPOM(bundles);
         lastCsvH = csvFromHighest(bundles);
         lastCsvS = csvFromSummary(totals);
-        dlP.disabled = !lastCsvP; dlH.disabled = !lastCsvH; dlS.disabled = !lastCsvS;
+        dlP.disabled = !lastCsvP; dlH.disabled = !lastCsvH; dlS.disabled = !lastCsvS; dlT.disabled = !lastCsvS;
 
         // Table
         fillSummaryTable(totals);
@@ -386,6 +391,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     dlP.onclick = ()=>{ if (lastCsvP) csvBlobDownload("potm_results_2025_26.csv", lastCsvP); };
     dlH.onclick = ()=>{ if (lastCsvH) csvBlobDownload("highest_rating_results_2025_26.csv", lastCsvH); };
     dlS.onclick = ()=>{ if (lastCsvS) csvBlobDownload("summary_potm_2025_26.csv", lastCsvS); };
+    dlT.onclick = ()=>{ if (lastCsvS) csvBlobDownload("summary_table_potm_2025_26.csv", lastCsvS); };
   })();
   </script>
 </body>
