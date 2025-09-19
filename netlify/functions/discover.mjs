@@ -1,268 +1,257 @@
 // netlify/functions/discover.mjs
-// Fast HTML-only discover (no Playwright, no FotMob JSON).
-// 1) GET player page HTML → extract team_id & team_slug
-// 2) Parse __NEXT_DATA__ on the player page for any matchIds
-// 3) Try a few team pages (fixtures/matches/overview/base):
-//    - scrape anchors (/match/<digits> and /matches/<slug>/<token>)
-//    - parse __NEXT_DATA__ there too and harvest "matchId" values
-// 4) Return deduped match_urls (capped by maxMatches) + rich debug
+// Inputs:  POST { urls: [ "https://www.fotmob.com/players/<id>/<slug>", ... ] }
+// Outputs: { ok:true, players:[{ player_url, player_name, player_id, match_urls, debug }], meta:{...} }
+// Filters to Top-5 leagues and the 2025–26 season, and verifies player presence per match.
 
-const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
+const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
+const SEASON_START = new Date(Date.UTC(2025, 6, 1, 0, 0, 0));
+const SEASON_END   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59));
 
-const HDRS_HTML = {
-  "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-  "accept-language": "en-GB,en;q=0.9",
-  "user-agent": UA,
-  "referer": "https://www.fotmob.com/",
-};
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
+const HDRS_HTML = { accept:"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "user-agent":UA, referer:"https://www.fotmob.com/" };
+const HDRS_JSON = { accept:"application/json", "user-agent":UA, referer:"https://www.fotmob.com/" };
 
-const SLEEP = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
 
-async function fetchText(url, retry = 2) {
+function pidFromUrl(u){
+  try{ const m=new URL(u).pathname.match(/\/players\/(\d+)(?:\/|$)/i); return m?Number(m[1]):null; }catch{ return null; }
+}
+function norm(s){ return String(s||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim(); }
+
+async function fetchText(url, retry=2){
   let last;
-  for (let i = 0; i <= retry; i++) {
-    try {
-      const res = await fetch(url, { headers: HDRS_HTML, redirect: "follow" });
+  for (let i=0;i<=retry;i++){
+    try{
+      const res = await fetch(url,{ headers: HDRS_HTML, redirect: "follow" });
       const txt = await res.text();
-      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-      if (!txt) throw new Error("empty HTML");
-      return txt;
-    } catch (e) {
-      last = e;
-      await SLEEP(250 + 350 * i);
+      if(!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+      if(!txt) throw new Error("Empty HTML");
+      return { finalUrl: res.url || url, html: txt };
+    }catch(e){ last=e; await sleep(180+250*i); }
+  }
+  throw last || new Error("fetch failed (html)");
+}
+async function fetchJSON(url, retry=2){
+  let last;
+  for (let i=0;i<=retry;i++){
+    try{
+      const res = await fetch(url,{ headers: HDRS_JSON, redirect: "follow" });
+      const txt = await res.text();
+      if(!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} :: ${txt?.slice(0,200)||""}`);
+      return JSON.parse(txt);
+    }catch(e){ last=e; await sleep(180+250*i); }
+  }
+  throw last || new Error("fetch failed (json)");
+}
+
+function extractNextData(html){
+  const m = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
+  if(!m) return null;
+  try{ return JSON.parse(m[1]); }catch{ return null; }
+}
+
+function* walkObjects(root){
+  const stack=[root]; const seen=new Set();
+  while(stack.length){
+    const n=stack.pop();
+    if(!n || typeof n!=="object") continue;
+    if(seen.has(n)) continue;
+    seen.add(n);
+    yield n;
+    for(const v of Object.values(n)){
+      if(v && typeof v === "object") stack.push(v);
+      if(Array.isArray(v)) for(const it of v) if(it && typeof it === "object") stack.push(it);
     }
   }
-  throw last || new Error("fetch failed");
 }
 
-function parsePlayer(url) {
-  try {
-    const u = new URL(url);
-    const parts = u.pathname.split("/").filter(Boolean); // ["players","1467236","lamine-yamal"]
-    const pid = Number(parts[1]);
-    const slug = decodeURIComponent(parts[2] || "").replace(/-/g, " ").trim();
-    return { player_id: Number.isFinite(pid) ? pid : null, player_name: slug || null };
-  } catch {
-    return { player_id: null, player_name: null };
+function asNum(v){ return Number.isFinite(Number(v)) ? Number(v) : null; }
+function asStr(v){ return typeof v==="string" ? v : (v?.name || v?.fullName || null); }
+
+function pickLeagueId(obj){
+  for(const n of walkObjects(obj)){
+    for(const [k,v] of Object.entries(n)){
+      if(/(leagueid|tournamentid|competitionid)$/i.test(k)){
+        const num = Number(v); if(Number.isFinite(num)) return num;
+      }
+    }
+  } return null;
+}
+function pickKickoff(obj){
+  for(const n of walkObjects(obj)){
+    for(const [k,v] of Object.entries(n)){
+      const kk = String(k).toLowerCase();
+      if (/^(matchtimeutc|starttimeutc|startdate|kickoffiso|utcstart|dateutc)$/.test(kk) && typeof v==="string"){
+        const d=new Date(v); if(!isNaN(d)) return d;
+      }
+      if (/^(matchtime|kickoff|epoch|timestamp)$/.test(kk) && Number.isFinite(Number(v))){
+        const ts = Number(v); const d=new Date(ts>1e12?ts:ts*1000); if(!isNaN(d)) return d;
+      }
+    }
+  } return null;
+}
+
+async function fetchMatchData(matchId){
+  // Try API first; fallback to HTML __NEXT_DATA__
+  try{
+    const j = await fetchJSON(`https://www.fotmob.com/api/matchDetails?matchId=${matchId}`);
+    return { data: j, source: "api" };
+  }catch{
+    const { html } = await fetchText(`https://www.fotmob.com/match/${matchId}`);
+    const nd = extractNextData(html);
+    if(!nd) throw new Error("NEXT_DATA not found");
+    // Build a minimal container that still works with pickers
+    return { data: nd, source: "next_html" };
   }
 }
 
-// --- __NEXT_DATA__ helpers ---
-function extractNextDataString(html) {
-  const m = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
-  return m ? m[1] : null;
-}
-function safeParseJSON(str) {
-  try { return JSON.parse(str); } catch { return null; }
-}
-function collectMatchIdsFromNextData(nextStrOrObj) {
+function collectMatchIdsFromNext(nextObj){
   const ids = new Set();
-  // 1) cheap regex over the raw string to catch "matchId":1234567 and /match/1234567
-  const raw = typeof nextStrOrObj === "string" ? nextStrOrObj : JSON.stringify(nextStrOrObj || {});
-  for (const mm of raw.matchAll(/"matchId"\s*:\s*(\d{5,10})/gi)) ids.add(mm[1]);
-  for (const mm of raw.matchAll(/\/match\/(\d{5,10})/gi)) ids.add(mm[1]);
-
-  // 2) object-walk to be safe if structure is nested without those exact strings
-  const obj = typeof nextStrOrObj === "string" ? safeParseJSON(nextStrOrObj) : (nextStrOrObj || null);
-  if (obj && typeof obj === "object") {
-    const q = [obj];
-    while (q.length) {
-      const node = q.pop();
-      if (!node || typeof node !== "object") continue;
-      // canonical key
-      if (node.matchId && Number.isFinite(Number(node.matchId))) {
-        const sid = String(node.matchId);
-        if (/^\d{5,10}$/.test(sid)) ids.add(sid);
-      }
-      // sometimes "id" in match-like nodes
-      if (node.id && Number.isFinite(Number(node.id))) {
-        const sid = String(node.id);
-        // only accept plausible match id lengths
-        if (/^\d{6,10}$/.test(sid) && (node.homeTeam || node.awayTeam || node.home || node.away)) {
-          ids.add(sid);
+  // from dehydrated queries
+  const queries = nextObj?.props?.pageProps?.dehydratedState?.queries;
+  if(Array.isArray(queries)){
+    for(const q of queries){
+      const d=q?.state?.data;
+      if(!d || typeof d!=="object") continue;
+      for(const node of walkObjects(d)){
+        // explicit matchId fields
+        if (asNum(node?.matchId)) ids.add(String(node.matchId));
+        // URLs or paths containing /match/<id>
+        for(const [k,v] of Object.entries(node)){
+          if(typeof v === "string"){
+            const m = v.match(/\/match\/(\d{5,10})(?:\/|$)/i);
+            if(m) ids.add(m[1]);
+          }
         }
       }
-      for (const k of Object.keys(node)) {
-        const v = node[k];
-        if (!v) continue;
-        if (Array.isArray(v)) for (const it of v) if (it && typeof it === "object") q.push(it);
-        else if (typeof v === "object") q.push(v);
+    }
+  }
+  // fallback: search the entire tree
+  for(const node of walkObjects(nextObj)){
+    if (asNum(node?.matchId)) ids.add(String(node.matchId));
+    for(const [k,v] of Object.entries(node)){
+      if(typeof v === "string"){
+        const m = v.match(/\/match\/(\d{5,10})(?:\/|$)/i);
+        if(m) ids.add(m[1]);
       }
     }
   }
-
   return Array.from(ids);
 }
 
-// --- Non-JS scraping (anchors + any "matchId" in inline JSON) ---
-function scrapeMatchLinks(html) {
-  const set = new Set();
-  // Anchors to /match/<digits>
-  for (const m of html.matchAll(/href="(\/match\/\d{5,10}(?:\/[^"]*)?)"/gi)) {
-    set.add("https://www.fotmob.com" + m[1]);
+function guessPlayerName(nextObj){
+  // Try to find the player display name on the player page next data
+  const pp = nextObj?.props?.pageProps;
+  const name = pp?.player?.name || pp?.pagePlayer?.name || pp?.header?.playerName || pp?.meta?.title;
+  if(typeof name === "string") return name;
+  for(const node of walkObjects(nextObj)){
+    const nm = node?.playerName || node?.name || node?.fullName;
+    if(typeof nm === "string" && nm.length >= 3) return nm;
   }
-  // Anchors to /matches/<slug>/<token>
-  for (const m of html.matchAll(/href="(\/matches\/[^"?#]+)"/gi)) {
-    set.add("https://www.fotmob.com" + m[1]);
-  }
-  // Fallback: embedded "matchId": 1234567
-  for (const m of html.matchAll(/"matchId"\s*:\s*(\d{5,10})/gi)) {
-    set.add("https://www.fotmob.com/match/" + m[1]);
-  }
-  return Array.from(set);
+  return "";
 }
 
-// Pull all /teams/... hrefs and compute robust (team_id, team_slug)
-// Pick the LAST meaningful segment after the numeric id, skipping "overview|fixtures|matches|squad|stats|statistics|transfers|news|table|season|results"
-function findTeamFromPlayerHtml(html) {
-  const hrefs = Array.from(html.matchAll(/href="\/teams\/([^"]+)"/gi)).map(m => m[1]); // e.g. "8634/overview/barcelona"
-  const BAD = new Set(["overview","fixtures","matches","squad","stats","statistics","transfers","news","table","season","results"]);
-  for (const h of hrefs) {
-    const path = h.split("?")[0].replace(/^\/+|\/+$/g, "");
-    const segs = path.split("/"); // ["8634","overview","barcelona"] OR ["8634","barcelona"]
-    const id = Number(segs[0]);
-    if (!Number.isFinite(id)) continue;
-    let slug = null;
-    for (let i = segs.length - 1; i >= 1; i--) {
-      const s = (segs[i] || "").toLowerCase();
-      if (!s || BAD.has(s)) continue;
-      if (/^\d+$/.test(s)) continue;
-      slug = s;
-      break;
+function findTeamId(nextObj){
+  // Common locations: currentTeam.id, club.id, teamId fields
+  for(const node of walkObjects(nextObj)){
+    if (asNum(node?.teamId)) return Number(node.teamId);
+    if (node?.currentTeam && asNum(node.currentTeam.id)) return Number(node.currentTeam.id);
+    if (node?.club && asNum(node.club.id)) return Number(node.club.id);
+  }
+  return null;
+}
+
+async function hasPlayerInMatch(matchId, playerId){
+  try{
+    const { data } = await fetchMatchData(matchId);
+    const lid = pickLeagueId(data);
+    const dt  = pickKickoff(data);
+    // league + season gate
+    if (!TOP5_LEAGUE_IDS.has(Number(lid)) || !dt || dt < SEASON_START || dt > SEASON_END) return false;
+
+    // presence check anywhere in payload
+    for(const node of walkObjects(data)){
+      const id = asNum(node?.playerId ?? node?.id ?? node?.player?.id);
+      if (id != null && Number(id) === Number(playerId)) return true;
     }
-    if (!slug) continue;
-    return { team_id: id, team_slug: slug };
+    return false;
+  }catch{
+    return false;
   }
-  return { team_id: null, team_slug: null };
 }
 
-async function discoverForPlayer(player_url, cap) {
-  const { player_id, player_name } = parsePlayer(player_url);
-  const debug = {
-    player_id,
-    team_id: null,
-    team_slug: null,
-    tried_urls: [],
-    anchors_found: 0,
-    player_next_ids: 0,
-    team_next_ids: 0,
-    errors: [],
-  };
+async function discoverForUrl(playerUrl){
+  const debug = { player_next_ids:0, team_id:null, tried_urls:[], errors:[] };
+  try{
+    const { html } = await fetchText(playerUrl);
+    const nd = extractNextData(html);
+    if(!nd) throw new Error("No __NEXT_DATA__ on player page");
 
-  if (!player_id) {
-    debug.errors.push("Could not parse player_id from URL");
-    return { player_url, player_id: null, player_name, match_urls: [], debug };
-  }
+    const player_id = pidFromUrl(playerUrl);
+    const player_name = guessPlayerName(nd) || (playerUrl.split("/").pop()||"").replace(/-/g," ");
+    debug.team_id = findTeamId(nd);
 
-  // 1) Player HTML
-  let playerHtml = "";
-  try {
-    playerHtml = await fetchText(player_url);
-  } catch (e) {
-    debug.errors.push("player_html: " + String(e));
-    return { player_url, player_id, player_name, match_urls: [], debug };
-  }
-
-  // 1a) Extract any matchIds from player's __NEXT_DATA__
-  const pdStr = extractNextDataString(playerHtml);
-  if (pdStr) {
-    const ids = collectMatchIdsFromNextData(pdStr);
+    // Gather candidate match IDs from player page ND
+    const ids = collectMatchIdsFromNext(nd);
     debug.player_next_ids = ids.length;
-    // We'll add them later into the final set
-  }
 
-  // 1b) Find team
-  const { team_id, team_slug } = findTeamFromPlayerHtml(playerHtml);
-  debug.team_id = team_id;
-  debug.team_slug = team_slug;
-
-  // Build a final set of URLs
-  const urlSet = new Set();
-  // add any matchIds found on player page
-  if (pdStr) {
-    for (const id of collectMatchIdsFromNextData(pdStr)) {
-      urlSet.add(`https://www.fotmob.com/match/${id}`);
+    // Verify and filter candidates by presence + league + season
+    const kept = [];
+    for (const mid of ids){
+      // throttle implicitly via loop; FotMob can rate-limit if too many
+      if (await hasPlayerInMatch(mid, player_id)) kept.push(mid);
     }
+
+    const match_urls = kept.map(id => `https://www.fotmob.com/match/${id}`);
+    return {
+      ok: true,
+      player_url: playerUrl,
+      player_name,
+      player_id,
+      match_urls,
+      debug
+    };
+  }catch(e){
+    debug.errors.push(String(e));
+    return { ok:false, player_url: playerUrl, player_name:"", player_id: pidFromUrl(playerUrl), match_urls:[], debug };
   }
-
-  if (!team_id || !team_slug) {
-    debug.errors.push("Could not find team link on player page");
-    const all = Array.from(urlSet);
-    debug.anchors_found = all.length;
-    const match_urls = Number(cap) > 0 ? all.slice(0, Number(cap)) : all;
-    return { player_url, player_id, player_name, match_urls, debug };
-  }
-
-  // 2) Team pages (fixtures/matches/overview/base)
-  const candidates = [
-    `https://www.fotmob.com/teams/${team_id}/fixtures/${encodeURIComponent(team_slug)}`,
-    `https://www.fotmob.com/teams/${team_id}/matches/${encodeURIComponent(team_slug)}`,
-    `https://www.fotmob.com/teams/${team_id}/overview/${encodeURIComponent(team_slug)}`,
-    `https://www.fotmob.com/teams/${team_id}/${encodeURIComponent(team_slug)}`
-  ];
-
-  for (const url of candidates) {
-    debug.tried_urls.push(url);
-    try {
-      const html = await fetchText(url);
-
-      // anchors + "matchId" in inline JSON
-      const links = scrapeMatchLinks(html);
-      for (const u of links) urlSet.add(u);
-
-      // __NEXT_DATA__ on team page too
-      const ndStr = extractNextDataString(html);
-      if (ndStr) {
-        const ids = collectMatchIdsFromNextData(ndStr);
-        debug.team_next_ids += ids.length;
-        for (const id of ids) urlSet.add(`https://www.fotmob.com/match/${id}`);
-      }
-
-      // Early exit if we already have plenty
-      if (urlSet.size >= (cap > 0 ? cap : 250)) break;
-    } catch (e) {
-      debug.errors.push(`fetch ${url}: ${String(e)}`);
-    }
-  }
-
-  const all = Array.from(urlSet);
-  debug.anchors_found = all.length;
-
-  const match_urls = Number(cap) > 0 ? all.slice(0, Number(cap)) : all;
-  return { player_url, player_id, player_name, match_urls, debug };
 }
 
-export async function handler(event) {
-  try {
-    let payload = {};
-    if (event.httpMethod === "POST") {
-      try { payload = JSON.parse(event.body || "{}"); }
-      catch {
-        return { statusCode: 400, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: "Invalid JSON body" }) };
-      }
-    } else {
-      payload = { urls: (event.queryStringParameters?.urls || "").split(",").filter(Boolean), maxMatches: Number(event.queryStringParameters?.maxMatches || 0) };
+export async function handler(event){
+  try{
+    if (event.httpMethod !== "POST"){
+      return { statusCode:400, headers:{ "content-type":"application/json" }, body: JSON.stringify({ error:"Provide POST { urls: [...] }" }) };
     }
-
-    const urls = Array.isArray(payload.urls) ? payload.urls : [];
-    const cap = Number(payload.maxMatches) || 0;
-
-    if (!urls.length) {
-      return { statusCode: 400, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: "Provide { urls: [...] }" }) };
+    let body;
+    try{ body = JSON.parse(event.body||"{}"); }catch{ return { statusCode:400, headers:{ "content-type":"application/json" }, body: JSON.stringify({ error:"Invalid JSON body" }) }; }
+    const urls = Array.isArray(body.urls) ? body.urls.map(String).map(s=>s.trim()).filter(Boolean) : [];
+    if (!urls.length){
+      return { statusCode:400, headers:{ "content-type":"application/json" }, body: JSON.stringify({ error:"Provide { urls: [...] }" }) };
     }
 
     const players = [];
-    for (const player_url of urls) {
-      try {
-        players.push(await discoverForPlayer(player_url, cap));
-      } catch (e) {
-        players.push({ player_url, player_id: null, player_name: null, match_urls: [], debug: { errors: [String(e)] } });
-      }
+    for (const u of urls){
+      const one = await discoverForUrl(u);
+      players.push({
+        player_url: one.player_url,
+        player_name: one.player_name,
+        player_id: one.player_id,
+        match_urls: one.match_urls || [],
+        debug: one.debug || {}
+      });
     }
 
-    return { statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify({ ok: true, players }) };
-  } catch (e) {
-    return { statusCode: 500, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: String(e) }) };
+    // Meta
+    const uniqueMatches = new Set();
+    for (const p of players) (p.match_urls||[]).forEach(m => uniqueMatches.add(m));
+    const meta = {
+      unique_matches: uniqueMatches.size,
+      returned_per_player: players.reduce((a,p)=>a+(p.match_urls||[]).length,0)/(players.length||1),
+      season_window: { from: "2025-07-01", to: "2026-06-30" }
+    };
+
+    return { statusCode:200, headers:{ "content-type":"application/json" }, body: JSON.stringify({ ok:true, players, meta }) };
+  }catch(e){
+    return { statusCode:500, headers:{ "content-type":"application/json" }, body: JSON.stringify({ ok:false, error:String(e) }) };
   }
 }
