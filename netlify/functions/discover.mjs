@@ -1,15 +1,19 @@
 // netlify/functions/discover.mjs
-// Lightweight discover: no Playwright, no FotMob JSON.
-// 1) GET player page HTML -> find /teams/<id>/<slug>
-// 2) GET team fixtures HTML -> scrape match anchors (/match/<id> and /matches/...)
-// 3) Return match_urls (capped) + debug
+// Fast HTML scraper (no Playwright, no FotMob JSON).
+// Steps:
+// 1) GET player page HTML → find /teams/<id>/<slug> (robust: handles /overview/<slug>, /fixtures/<slug>, etc.)
+// 2) Build a small set of candidate team pages and scrape match anchors:
+//    • /teams/<id>/fixtures/<slug>
+//    • /teams/<id>/matches/<slug>
+//    • /teams/<id>/overview/<slug>
+//    • /teams/<id>/<slug>
+// 3) Collect both "/match/<digits>" and "/matches/<slug>/<token>" links (checker handles either format).
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
 
 const HDRS_HTML = {
-  "accept":
-    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
   "accept-language": "en-GB,en;q=0.9",
   "user-agent": UA,
   "referer": "https://www.fotmob.com/",
@@ -46,24 +50,33 @@ function parsePlayer(url) {
   }
 }
 
+// Pull all /teams/... hrefs and compute a robust (id, slug)
+// We pick the LAST meaningful segment after the id, skipping "overview|fixtures|matches|squad|stats|transfers|news|table|season".
 function findTeamFromPlayerHtml(html) {
-  // Look for /teams/<id>/<slug> (avoid /overview in the slug if possible)
-  const all = Array.from(html.matchAll(/href="\/teams\/(\d+)\/([^"\/<]+)(?:\/[^"]*)?"/gi)).map(m => ({ id: m[1], slug: m[2] }));
-  if (!all.length) return { team_id: null, team_slug: null };
-
-  // Prefer a slug that is not "overview"
-  let pick = all.find(x => x.slug && x.slug.toLowerCase() !== "overview");
-  if (!pick) pick = all[0];
-
-  const team_id = Number(pick.id);
-  const team_slug = (pick.slug || "team").toLowerCase();
-  return { team_id: Number.isFinite(team_id) ? team_id : null, team_slug };
+  const hrefs = Array.from(html.matchAll(/href="\/teams\/([^"]+)"/gi)).map(m => m[1]); // e.g. "8634/overview/barcelona"
+  const BAD = new Set(["overview","fixtures","matches","squad","stats","statistics","transfers","news","table","season","results"]);
+  for (const h of hrefs) {
+    const path = h.split("?")[0].replace(/^\/+|\/+$/g, "");
+    const segs = path.split("/"); // ["8634","overview","barcelona"] OR ["8634","barcelona"]
+    const id = Number(segs[0]);
+    if (!Number.isFinite(id)) continue;
+    // choose last non-bad, non-numeric segment as slug
+    let slug = null;
+    for (let i = segs.length - 1; i >= 1; i--) {
+      const s = segs[i].toLowerCase();
+      if (!s || BAD.has(s)) continue;
+      if (/^\d+$/.test(s)) continue;
+      slug = s;
+      break;
+    }
+    if (!slug) continue;
+    return { team_id: id, team_slug: slug };
+  }
+  return { team_id: null, team_slug: null };
 }
 
-function scrapeMatchLinksFromFixturesHtml(html) {
-  // Collect both formats
+function scrapeMatchLinks(html) {
   const set = new Set();
-
   // /match/<digits>
   for (const m of html.matchAll(/href="(\/match\/\d{5,10}(?:\/[^"]*)?)"/gi)) {
     set.add("https://www.fotmob.com" + m[1]);
@@ -72,12 +85,10 @@ function scrapeMatchLinksFromFixturesHtml(html) {
   for (const m of html.matchAll(/href="(\/matches\/[^"?#]+)"/gi)) {
     set.add("https://www.fotmob.com" + m[1]);
   }
-
-  // Also scan any embedded JSON for matchId
+  // embedded JSON with "matchId": 1234567
   for (const m of html.matchAll(/"matchId"\s*:\s*(\d{5,10})/gi)) {
     set.add("https://www.fotmob.com/match/" + m[1]);
   }
-
   return Array.from(set);
 }
 
@@ -87,7 +98,7 @@ async function discoverForPlayer(player_url, cap) {
     player_id,
     team_id: null,
     team_slug: null,
-    used_fixtures_url: null,
+    tried_urls: [],
     anchors_found: 0,
     errors: [],
   };
@@ -97,6 +108,7 @@ async function discoverForPlayer(player_url, cap) {
     return { player_url, player_id: null, player_name, match_urls: [], debug };
   }
 
+  // 1) Player page → find team
   let playerHtml = "";
   try {
     playerHtml = await fetchText(player_url);
@@ -114,21 +126,32 @@ async function discoverForPlayer(player_url, cap) {
     return { player_url, player_id, player_name, match_urls: [], debug };
   }
 
-  const fixturesUrl = `https://www.fotmob.com/teams/${team_id}/fixtures/${encodeURIComponent(team_slug)}`;
-  debug.used_fixtures_url = fixturesUrl;
+  // 2) Try a small set of team pages to maximize chances of finding anchors
+  const candidates = [
+    `https://www.fotmob.com/teams/${team_id}/fixtures/${encodeURIComponent(team_slug)}`,
+    `https://www.fotmob.com/teams/${team_id}/matches/${encodeURIComponent(team_slug)}`,
+    `https://www.fotmob.com/teams/${team_id}/overview/${encodeURIComponent(team_slug)}`,
+    `https://www.fotmob.com/teams/${team_id}/${encodeURIComponent(team_slug)}`
+  ];
 
-  let fixturesHtml = "";
-  try {
-    fixturesHtml = await fetchText(fixturesUrl);
-  } catch (e) {
-    debug.errors.push("fixtures_html: " + String(e));
-    return { player_url, player_id, player_name, match_urls: [], debug };
+  const linksSet = new Set();
+  for (const url of candidates) {
+    try {
+      debug.tried_urls.push(url);
+      const html = await fetchText(url);
+      const links = scrapeMatchLinks(html);
+      for (const u of links) linksSet.add(u);
+      // If we already have a healthy number, stop early
+      if (linksSet.size >= (cap > 0 ? cap : 200)) break;
+    } catch (e) {
+      debug.errors.push(`fetch ${url}: ${String(e)}`);
+    }
   }
 
-  const links = scrapeMatchLinksFromFixturesHtml(fixturesHtml);
-  debug.anchors_found = links.length;
+  const all = Array.from(linksSet);
+  debug.anchors_found = all.length;
 
-  const match_urls = Number(cap) > 0 ? links.slice(0, Number(cap)) : links;
+  const match_urls = Number(cap) > 0 ? all.slice(0, Number(cap)) : all;
   return { player_url, player_id, player_name, match_urls, debug };
 }
 
@@ -136,16 +159,12 @@ export async function handler(event) {
   try {
     let payload = {};
     if (event.httpMethod === "POST") {
-      try {
-        payload = JSON.parse(event.body || "{}");
-      } catch {
+      try { payload = JSON.parse(event.body || "{}"); }
+      catch {
         return { statusCode: 400, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: "Invalid JSON body" }) };
       }
     } else {
-      payload = {
-        urls: (event.queryStringParameters?.urls || "").split(",").filter(Boolean),
-        maxMatches: Number(event.queryStringParameters?.maxMatches || 0),
-      };
+      payload = { urls: (event.queryStringParameters?.urls || "").split(",").filter(Boolean), maxMatches: Number(event.queryStringParameters?.maxMatches || 0) };
     }
 
     const urls = Array.isArray(payload.urls) ? payload.urls : [];
@@ -160,21 +179,11 @@ export async function handler(event) {
       try {
         players.push(await discoverForPlayer(player_url, cap));
       } catch (e) {
-        players.push({
-          player_url,
-          player_id: null,
-          player_name: null,
-          match_urls: [],
-          debug: { errors: [String(e)] },
-        });
+        players.push({ player_url, player_id: null, player_name: null, match_urls: [], debug: { errors: [String(e)] } });
       }
     }
 
-    return {
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ok: true, players }),
-    };
+    return { statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify({ ok: true, players }) };
   } catch (e) {
     return { statusCode: 500, headers: { "content-type": "application/json" }, body: JSON.stringify({ error: String(e) }) };
   }
