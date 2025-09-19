@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>FotMob — POTM & Highest (Top-5, 2025–26)</title>
+  <title>FotMob — POTM & Match Stats (Top-5, 2025–26)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
@@ -13,12 +13,12 @@
     }
     *{box-sizing:border-box}
     body{background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;margin:0;padding:32px 16px 56px}
-    .container{max-width:1100px;margin:0 auto}
+    .container{max-width:1180px;margin:0 auto}
     h1{margin:0 0 12px;font-size:28px;font-weight:700}
     p.muted{color:var(--muted);margin-top:0}
     .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
     .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-    @media (max-width:860px){.grid,.grid-2{grid-template-columns:1fr}}
+    @media (max-width:980px){.grid,.grid-2{grid-template-columns:1fr}}
     .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:0 8px 16px rgba(0,0,0,.25)}
     label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
     textarea,input,button{width:100%;padding:12px;border-radius:10px;border:1px solid #233044;background:#0b1220;color:var(--text);outline:none}
@@ -38,7 +38,7 @@
     .summary{background:#10223a;border:1px solid #244a78;border-radius:12px;padding:12px 14px;white-space:pre-wrap;font-weight:600}
     .muted-small{color:var(--muted);font-size:12px}
     table{width:100%;border-collapse:separate;border-spacing:0 8px}
-    thead th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#a8b3c7;text-align:left;padding:6px 10px}
+    thead th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#a8b3c7;text-align:left;padding:6px 10px;white-space:nowrap}
     tbody td{background:#0c1528;border:1px solid #1b2740;padding:10px 12px}
     tbody tr td:first-child{border-top-left-radius:10px;border-bottom-left-radius:10px}
     tbody tr td:last-child{border-top-right-radius:10px;border-bottom-right-radius:10px}
@@ -46,8 +46,8 @@
 </head>
 <body>
   <div class="container">
-    <h1>FotMob — POTM & Highest Rating (Top-5, 2025–26)</h1>
-    <p class="muted">Paste FotMob player URLs. We discover matches (with fallback) and check POTM/Highest for Premier League, LaLiga, Bundesliga, Serie A, and Ligue 1 — season 2025–26 only.</p>
+    <h1>FotMob — POTM & Match Stats (Top-5, 2025–26)</h1>
+    <p class="muted">Paste FotMob player URLs. We use discover (with fallback) and check POTM/Highest and player stats for Premier League, LaLiga, Bundesliga, Serie A, and Ligue 1 — <strong>2025–26 only</strong>.</p>
 
     <div class="card" style="margin-bottom:14px">
       <div class="grid">
@@ -63,7 +63,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
           <input id="to" type="text" />
           <label style="margin-top:12px">Chunk size (days)</label>
           <input id="chunkDays" type="number" value="7" min="1" />
-          <div class="muted-small">Used only if discover returns zero matches for a player.</div>
+          <div class="muted-small">Used only when discover returns zero matches for a player.</div>
         </div>
         <div>
           <label>Max matches per player (cap)</label>
@@ -108,13 +108,17 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
           <button id="downloadCsvTable" class="btn" disabled>Download table (CSV)</button>
         </div>
       </div>
-      <div class="muted-small" style="margin-bottom:8px">player name | number of times player of the match</div>
+      <div class="muted-small" style="margin-bottom:8px">player | POTM | Highest | Goals | NPG | PG | Assists | YC | RC | FMP (count)</div>
       <table>
         <thead>
-          <tr><th>Player</th><th>POTM (2025–26)</th><th>Highest Rating (2025–26)</th></tr>
+        <tr>
+          <th>Player</th><th>POTM</th><th>Highest</th>
+          <th>Goals</th><th>NPG</th><th>PG</th>
+          <th>Assists</th><th>YC</th><th>RC</th><th>FMP</th>
+        </tr>
         </thead>
         <tbody id="summaryTableBody">
-          <tr><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td></tr>
+          <tr><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td></tr>
         </tbody>
       </table>
     </div>
@@ -122,7 +126,6 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
 
   <script>
   (function(){
-    // ---------- DOM refs ----------
     const out = document.getElementById("out");
     const statusEl = document.getElementById("status");
     const statusTag = document.getElementById("statusTag");
@@ -135,9 +138,8 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     const dlS = document.getElementById("downloadCsvSummary");
     const dlT = document.getElementById("downloadCsvTable");
 
-    let lastCsvP = "", lastCsvH = "", lastCsvS = "";
+    let lastCsvP = "", lastCsvH = "", lastCsvS = "", lastCsvTable = "";
 
-    // ---------- helpers ----------
     const yyyymmdd = (d)=>{const y=d.getUTCFullYear();const m=String(d.getUTCMonth()+1).padStart(2,"0");const day=String(d.getUTCDate()).padStart(2,"0");return `${y}${m}${day}`;};
     const todayUTC = ()=>{const now=new Date();return yyyymmdd(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())));};
     const parseUrls = ()=> document.getElementById("urls").value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
@@ -173,22 +175,29 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
       if (!players || !players.length) return "No players.";
       return players.map(p=>{
         const d=p.debug||{};
-        return `• ${p.player_name || "(unknown)"} — matches:${(p.match_urls||[]).length}  [XHR:${d.xhr_hit?"✓":"×"} PF:${d.page_fetch?"✓":"×"} anchors:${d.anchors_found||0} nextP:${d.player_next_ids||0} nextT:${d.team_next_ids||0}]`;
+        return `• ${p.player_name || "(unknown)"} — matches:${(p.match_urls||[]).length}  [anchors:${d.anchors_found||0} nextP:${d.player_next_ids||0} nextT:${d.team_next_ids||0}${d.fallback_calendar?`, fallback:${d.fallback_total}`:""}]`;
       }).join("\n");
     }
 
     function fillSummaryTable(rows){
       tbody.innerHTML = "";
       if (!rows.length){
-        tbody.innerHTML = '<tr><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td></tr>';
+        tbody.innerHTML = '<tr><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td></tr>';
         return;
       }
       for (const r of rows){
         const tr = document.createElement("tr");
-        const td1 = document.createElement("td"); td1.textContent = r.player_name || "";
-        const td2 = document.createElement("td"); td2.textContent = String(r.potm_total ?? 0);
-        const td3 = document.createElement("td"); td3.textContent = String(r.highest_rating_total ?? 0);
-        tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+        function td(v){const x=document.createElement("td"); x.textContent=String(v ?? 0); return x;}
+        tr.appendChild(td(r.player_name || ""));
+        tr.appendChild(td(r.potm_total));
+        tr.appendChild(td(r.highest_rating_total));
+        tr.appendChild(td(r.goals));
+        tr.appendChild(td(r.npg));
+        tr.appendChild(td(r.pg));
+        tr.appendChild(td(r.assists));
+        tr.appendChild(td(r.yc));
+        tr.appendChild(td(r.rc));
+        tr.appendChild(td(r.fmp));
         tbody.appendChild(tr);
       }
     }
@@ -223,10 +232,24 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
       return lines.join("\n");
     }
 
-    function csvFromSummary(totals){
+    function csvFromSummary(t){
+      // legacy two-col
       return ["player_name,potm_count"].concat(
-        totals.map(t => `${(t.player_name||"").replace(/,/g," ")},${t.potm_total||0}`)
+        t.map(x => `${(x.player_name||"").replace(/,/g," ")},${x.potm_total||0}`)
       ).join("\n");
+    }
+
+    function csvFromTable(rows){
+      const headers = ["player_name","potm","highest","goals","npg","pg","assists","yc","rc","fmp"];
+      const lines = [headers.join(",")];
+      for (const r of rows){
+        lines.push([
+          (r.player_name||"").replace(/,/g," "),
+          r.potm_total||0, r.highest_rating_total||0,
+          r.goals||0, r.npg||0, r.pg||0, r.assists||0, r.yc||0, r.rc||0, r.fmp||0
+        ].join(","));
+      }
+      return lines.join("\n");
     }
 
     async function runChecksForPlayer(player, concurrency){
@@ -289,11 +312,10 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
       return Array.from(union);
     }
 
-    // ---------- Main runner ----------
     btnRun.onclick = async ()=>{
       try{
         btnRun.disabled = true; dlP.disabled = dlH.disabled = dlS.disabled = dlT.disabled = true;
-        lastCsvP = lastCsvH = lastCsvS = "";
+        lastCsvP = lastCsvH = lastCsvS = lastCsvTable = "";
         out.textContent = "—"; statusEl.textContent = "Starting…"; summaryBox.textContent = "—"; setTag("Working…","warn");
 
         const urls = parseUrls();
@@ -332,8 +354,22 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
         for (const p of players){
           const checked = await runChecksForPlayer(p, concurrency);
           const valid = checked.filter(r => r.league_allowed && r.within_season_2025_26);
+
           const hitsPotm = valid.filter(r => r.player_is_pom);
           const hitsHighest = valid.filter(r => r.has_highest_rating);
+
+          // NEW: aggregate per-player stats across valid matches
+          const agg = valid.reduce((a,r)=>{
+            const s = r.player_stats || {};
+            a.goals += Number(s.goals || 0);
+            a.pg    += Number(s.penalty_goals || 0);
+            a.npg   += Number(s.non_penalty_goals || 0);
+            a.assists += Number(s.assists || 0);
+            a.yc += Number(s.yellow_cards || 0);
+            a.rc += Number(s.red_cards || 0);
+            a.fmp += (s.full_match_played ? 1 : 0);
+            return a;
+          }, {goals:0,npg:0,pg:0,assists:0,yc:0,rc:0,fmp:0});
 
           bundles.push({
             player_url: p.player_url,
@@ -343,6 +379,8 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
             highest_rating_count: hitsHighest.length,
             pom_2025_26_domestic: hitsPotm,
             highest_2025_26_domestic: hitsHighest,
+            // NEW: per-player aggregates
+            agg,
             raw: checked,
             debug: p.debug
           });
@@ -352,8 +390,11 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
         const totals = bundles.map(b => ({
           player_name: b.player_name,
           potm_total: b.pom_2025_26_domestic_count,
-          highest_rating_total: b.highest_rating_count
+          highest_rating_total: b.highest_rating_count,
+          goals: b.agg.goals, npg: b.agg.npg, pg: b.agg.pg,
+          assists: b.agg.assists, yc: b.agg.yc, rc: b.agg.rc, fmp: b.agg.fmp
         }));
+
         const summary = {
           players_processed: bundles.length,
           total_pom_hits_2025_26_domestic: bundles.reduce((a,b)=>a+(b.pom_2025_26_domestic_count||0),0),
@@ -361,7 +402,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
         };
 
         const kpis = bundles.map(b =>
-          `• ${b.player_name}: checked ${b.checked_matches}, POTM ${b.pom_2025_26_domestic_count}, Highest ${b.highest_rating_count}`
+          `• ${b.player_name}: checked ${b.checked_matches}, POTM ${b.pom_2025_26_domestic_count}, Highest ${b.highest_rating_count} | Goals ${b.agg.goals} (NPG ${b.agg.npg}, PG ${b.agg.pg}) | Ast ${b.agg.assists} | YC ${b.agg.yc} | RC ${b.agg.rc} | FMP ${b.agg.fmp}`
           + (b.debug?.fallback_calendar ? `  [fallback: ${b.debug.fallback_total} matches]` : "")
         ).join("\n");
 
@@ -371,10 +412,50 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
         statusEl.textContent = "Completed.";
 
         // CSVs
-        lastCsvP = csvFromPOM(bundles);
-        lastCsvH = csvFromHighest(bundles);
-        lastCsvS = csvFromSummary(totals);
-        dlP.disabled = !lastCsvP; dlH.disabled = !lastCsvH; dlS.disabled = !lastCsvS; dlT.disabled = !lastCsvS;
+        lastCsvP = (function csvFromPOM(bundles){
+          const headers = ["player_name","player_url","match_url","match_title","league_label","match_datetime_utc","player_rating"];
+          const lines = [headers.join(",")];
+          for (const b of bundles){
+            const pname = (b.player_name || "").replace(/,/g," ");
+            const purl = b.player_url || "";
+            for (const r of b.pom_2025_26_domestic || []){
+              lines.push([pname, purl, r.match_url || "", (r.match_title || "").replace(/,/g," "),
+                (r.league_label || "").replace(/,/g," "), r.match_datetime_utc || "", r.player_rating==null?"":String(r.player_rating)].join(","));
+            }
+          }
+          return lines.join("\n");
+        })(bundles);
+
+        lastCsvH = (function csvFromHighest(bundles){
+          const headers = ["player_name","player_url","match_url","match_title","league_label","match_datetime_utc","player_rating","max_rating"];
+          const lines = [headers.join(",")];
+          for (const b of bundles){
+            const pname = (b.player_name || "").replace(/,/g," ");
+            const purl = b.player_url || "";
+            for (const r of b.highest_2025_26_domestic || []){
+              lines.push([pname, purl, r.match_url || "", (r.match_title || "").replace(/,/g," "),
+                (r.league_label || "").replace(/,/g," "), r.match_datetime_utc || "",
+                r.player_rating==null?"":String(r.player_rating),
+                r.max_rating==null?"":String(r.max_rating)].join(","));
+            }
+          }
+          return lines.join("\n");
+        })(bundles);
+
+        // legacy summary (two columns)
+        lastCsvS = ["player_name,potm_count"]
+          .concat(totals.map(t => `${(t.player_name||"").replace(/,/g," ")},${t.potm_total||0}`))
+          .join("\n");
+
+        // table CSV (all columns incl. new stats)
+        lastCsvTable = (function(){ return ["player_name,potm,highest,goals,npg,pg,assists,yc,rc,fmp"]
+          .concat(totals.map(r => [
+            (r.player_name||"").replace(/,/g," "),
+            r.potm_total||0, r.highest_rating_total||0, r.goals||0, r.npg||0, r.pg||0,
+            r.assists||0, r.yc||0, r.rc||0, r.fmp||0
+          ].join(","))).join("\n"); })();
+
+        dlP.disabled = !lastCsvP; dlH.disabled = !lastCsvH; dlS.disabled = !lastCsvS; dlT.disabled = !lastCsvTable;
 
         // Table
         fillSummaryTable(totals);
@@ -391,7 +472,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     dlP.onclick = ()=>{ if (lastCsvP) csvBlobDownload("potm_results_2025_26.csv", lastCsvP); };
     dlH.onclick = ()=>{ if (lastCsvH) csvBlobDownload("highest_rating_results_2025_26.csv", lastCsvH); };
     dlS.onclick = ()=>{ if (lastCsvS) csvBlobDownload("summary_potm_2025_26.csv", lastCsvS); };
-    dlT.onclick = ()=>{ if (lastCsvS) csvBlobDownload("summary_table_potm_2025_26.csv", lastCsvS); };
+    dlT.onclick = ()=>{ if (lastCsvTable) csvBlobDownload("summary_table_stats_2025_26.csv", lastCsvTable); };
   })();
   </script>
 </body>
