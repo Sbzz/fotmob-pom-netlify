@@ -11,7 +11,11 @@
       --chip:#1f2937; --border:#223041; --shadow:0 10px 30px rgba(0,0,0,.35); --radius:16px;
     }
     *{box-sizing:border-box}
-    body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Apple Color Emoji","Segoe UI Emoji";background:linear-gradient(180deg,#0a0c10,#0b0d10 40%,#0b0d10);color:var(--text)}
+    body{
+      margin:0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji";
+      background:linear-gradient(180deg, #0a0c10, #0b0d10 40%, #0b0d10);
+      color:var(--text);
+    }
     .wrap{max-width:1100px;margin:40px auto;padding:0 20px}
     header{display:flex;align-items:center;gap:14px;margin-bottom:18px}
     header .logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent-2));box-shadow:var(--shadow)}
@@ -21,9 +25,14 @@
     .controls{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:16px}
     .controls .block{background:var(--muted);border:1px solid var(--border);border-radius:12px;padding:12px}
     .controls label{display:block;font-size:12px;color:var(--sub);margin-bottom:8px}
-    textarea,input[type="text"]{width:100%;background:#0f141a;color:var(--text);border:1px solid #223041;border-radius:10px;padding:10px 12px;resize:vertical;min-height:90px}
+    textarea, input[type="text"]{
+      width:100%; background:#0f141a; color:var(--text); border:1px solid #223041; border-radius:10px; padding:10px 12px; resize:vertical; min-height:90px
+    }
     .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}
-    button{appearance:none;border:0;background:linear-gradient(135deg,var(--accent-2),#38bdf8);color:#0b1220;padding:10px 14px;border-radius:12px;font-weight:700;cursor:pointer;box-shadow:var(--shadow)}
+    button{
+      appearance:none; border:0; background:linear-gradient(135deg,var(--accent-2),#38bdf8);
+      color:#0b1220; padding:10px 14px; border-radius:12px; font-weight:700; cursor:pointer; box-shadow:var(--shadow)
+    }
     button.secondary{background:#1f2a37;color:#e5eef7;border:1px solid #29415b;box-shadow:none}
     button.ghost{background:transparent;border:1px dashed #2a3c52;color:#c8d6e5}
     .status{padding:14px 16px;border-top:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap}
@@ -35,7 +44,10 @@
     .playerCard{padding:16px;border-radius:16px;background:linear-gradient(180deg,var(--card),#0f1318);border:1px solid var(--border)}
     .head{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:8px}
     .head .name{font-weight:800;font-size:18px}
-    .summaryLine{background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.35);color:#dbeafe;padding:10px 12px;border-radius:12px;font-size:14px;line-height:1.4;box-shadow:var(--shadow)}
+    .summaryLine{
+      background:rgba(96,165,250,.08); border:1px solid rgba(96,165,250,.35); color:#dbeafe;
+      padding:10px 12px; border-radius:12px; font-size:14px; line-height:1.4; box-shadow: var(--shadow);
+    }
     .grid{overflow:auto;border:1px solid var(--border);border-radius:12px;margin-top:12px}
     table{width:100%;border-collapse:collapse;font-size:13px}
     th,td{padding:10px 12px;border-bottom:1px solid #1f2a33;white-space:nowrap}
@@ -90,57 +102,139 @@
 
   <script>
     // ---------- helpers ----------
-    const qs=(s,el=document)=>el.querySelector(s);
-    const statusEl=qs('#status');
-    const resultsEl=qs('#results');
-    const urlsEl=qs('#urls');
-    const matchesEl=qs('#matches');
-    const btnDiscover=qs('#btnDiscover');
-    const btnRun=qs('#btnRun');
-    const btnReset=qs('#btnReset');
-    const btnDownloadSummary=qs('#btnDownloadSummary');
-    const btnDownloadDetails=qs('#btnDownloadDetails');
-    const btnDownloadJSON=qs('#btnDownloadJSON');
+    const qs = (s,el=document)=>el.querySelector(s);
+    const statusEl = qs('#status');
+    const resultsEl = qs('#results');
+    const urlsEl = qs('#urls');
+    const matchesEl = qs('#matches');
+    const btnDiscover = qs('#btnDiscover');
+    const btnRun = qs('#btnRun');
+    const btnReset = qs('#btnReset');
+    const btnDownloadSummary = qs('#btnDownloadSummary');
+    const btnDownloadDetails = qs('#btnDownloadDetails');
+    const btnDownloadJSON = qs('#btnDownloadJSON');
 
-    function setStatusPills(pills){ statusEl.innerHTML=''; for(const p of pills){ const span=document.createElement('span'); span.className='pill '+(p.type||''); span.textContent=p.text; statusEl.appendChild(span);} }
-    function appendStatus(text,type=''){ const span=document.createElement('span'); span.className='pill '+type; span.textContent=text; statusEl.appendChild(span);}    
+    function setStatusPills(pills){
+      statusEl.innerHTML = '';
+      for(const p of pills){
+        const span = document.createElement('span');
+        span.className = 'pill ' + (p.type||'');
+        span.textContent = p.text;
+        statusEl.appendChild(span);
+      }
+    }
+    function appendStatus(text,type=''){
+      const span = document.createElement('span');
+      span.className = 'pill ' + type;
+      span.textContent = text;
+      statusEl.appendChild(span);
+    }
 
     function throttleQueue(items, limit, worker){
-      return new Promise(async(resolve)=>{
-        let i=0, active=0, out=[];
-        const next=()=>{ if(i>=items.length && active===0) return resolve(out);
-          while(active<limit && i<items.length){ const idx=i++, item=items[idx]; active++;
-            Promise.resolve(worker(item,idx)).then(res=>{ out[idx]=res; }).catch(err=>{ out[idx]={error:String(err)}; }).finally(()=>{ active--; next(); }); }
-        }; next();
+      return new Promise(async (resolve) => {
+        let i = 0, active = 0, out = [];
+        const next = () => {
+          if (i >= items.length && active === 0) return resolve(out);
+          while (active < limit && i < items.length) {
+            const idx = i++, item = items[idx];
+            active++;
+            Promise.resolve(worker(item, idx))
+              .then(res => { out[idx]=res; })
+              .catch(err => { out[idx]={error:String(err)}; })
+              .finally(()=>{ active--; next(); });
+          }
+        };
+        next();
       });
     }
 
     function downloadCSV(filename, rows){
-      const csv=[rows[0].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')]
-        .concat(rows.slice(1).map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')))
+      const csv = [rows[0].map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')]
+        .concat(rows.slice(1).map(r => r.map(v => `"${String(v ?? '').replace(/"/g,'""')}"`).join(',')))
         .join('\r\n');
-      const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
-      const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
     }
-    function downloadJSON(filename,obj){ const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
+
+    function downloadJSON(filename, obj){
+      const blob = new Blob([JSON.stringify(obj, null, 2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download=filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    // --- name helpers (fallback to URL slug) ---
+    const slugToName = (url) => {
+      try {
+        const parts = new URL(url || '').pathname.split('/');
+        const slug = decodeURIComponent(parts[parts.length - 1] || '').replace(/-/g, ' ').trim();
+        return slug ? slug.replace(/\b\w/g, c => c.toUpperCase()) : '';
+      } catch { return ''; }
+    };
+    const displayName = (p) => {
+      const n = (p?.player_name || '').trim();
+      if (n) return n;
+      return slugToName(p?.player_url || '') || '(unknown)';
+    };
 
     // parse playerId from profile URL
     const pidFromUrl=(u)=>{ const m=(u||'').match(/\/players\/(\d+)(?:\/|$)/); return m?Number(m[1]):null; };
 
-    // Integer-safe aggregation (no xG/npxG)
+    // Integer-safe aggregation (skip errors; no xG)
     function aggregatePlayerMatches(matchRows){
-      const acc={goals:0,npg:0,pg:0,assists:0,yc:0,rc:0,fmp:0,potm:0,checked:0};
-      for(const row of matchRows){ const s=row.player_stats||{}; acc.checked+=1; if(row.player_is_pom) acc.potm+=1; acc.goals+=Number(s.goals||0); acc.pg+=Number(s.penalty_goals||0); const npgCandidate=(s.non_penalty_goals!=null)?Number(s.non_penalty_goals):(Number(s.goals||0)-Number(s.penalty_goals||0)); acc.npg+=Math.max(0,npgCandidate); acc.assists+=Number(s.assists||0); acc.yc+=Number(s.yellow_cards||0); acc.rc+=Number(s.red_cards||0); acc.fmp+=(s.full_match_played?1:0); }
-      for(const k of ['goals','pg','npg','assists','yc','rc','fmp','potm','checked']) acc[k]=Math.trunc(acc[k]);
+      const rows = (matchRows || []).filter(r => !r.error); // skip error rows
+      const acc = { goals:0, npg:0, pg:0, assists:0, yc:0, rc:0, fmp:0, potm:0, checked:0 };
+      for(const row of rows){
+        const s = row.player_stats || {};
+        acc.checked += 1;
+        if (row.player_is_pom) acc.potm += 1;
+        acc.goals   += Number(s.goals || 0);
+        acc.pg      += Number(s.penalty_goals || 0);
+        const npgCandidate = (s.non_penalty_goals != null)
+          ? Number(s.non_penalty_goals)
+          : (Number(s.goals||0) - Number(s.penalty_goals||0));
+        acc.npg     += Math.max(0, npgCandidate);
+        acc.assists += Number(s.assists || 0);
+        acc.yc      += Number(s.yellow_cards || 0);
+        acc.rc      += Number(s.red_cards || 0);
+        acc.fmp     += (s.full_match_played ? 1 : 0);
+      }
+      for(const k of ['goals','pg','npg','assists','yc','rc','fmp','potm','checked']) acc[k] = Math.trunc(acc[k]);
       return acc;
     }
 
     function renderPlayerCard(p){
-      const card=document.createElement('div'); card.className='playerCard';
-      const head=document.createElement('div'); head.className='head'; head.innerHTML=`<div class="name">${p.player_name}</div><div class="muted small">${p.player_url||''}</div>`; card.appendChild(head);
-      const agg=aggregatePlayerMatches(p.raw);
-      const summary=document.createElement('div'); summary.className='summaryLine'; summary.textContent=`• ${p.player_name}: checked ${agg.checked}, POTM ${agg.potm} | Goals ${agg.goals} (NPG ${agg.npg}, PG ${agg.pg}) | Ast ${agg.assists} | YC ${agg.yc} | RC ${agg.rc} | FMP ${agg.fmp}`; card.appendChild(summary);
-      const grid=document.createElement('div'); grid.className='grid'; const table=document.createElement('table'); table.innerHTML=`
+      const name = displayName(p);
+      const card = document.createElement('div');
+      card.className = 'playerCard';
+
+      const head = document.createElement('div');
+      head.className = 'head';
+      head.innerHTML = `
+        <div class="name">${name}</div>
+        <div class="muted small">${p.player_url || ''}</div>
+      `;
+      card.appendChild(head);
+
+      const agg = aggregatePlayerMatches(p.raw);
+
+      const summary = document.createElement('div');
+      summary.className = 'summaryLine';
+      summary.textContent =
+        `• ${name}: checked ${agg.checked}, POTM ${agg.potm} | ` +
+        `Goals ${agg.goals} (NPG ${agg.npg}, PG ${agg.pg}) | ` +
+        `Ast ${agg.assists} | YC ${agg.yc} | RC ${agg.rc} | FMP ${agg.fmp}`;
+      card.appendChild(summary);
+
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      const table = document.createElement('table');
+      table.innerHTML = `
         <thead>
           <tr>
             <th>Match</th><th>League</th><th>Date (UTC)</th>
@@ -148,87 +242,219 @@
             <th>G</th><th>NPG</th><th>PG</th><th>A</th><th>YC</th><th>RC</th><th>FMP</th><th>Source</th>
           </tr>
         </thead>
-        <tbody></tbody>`;
-      const tb=table.querySelector('tbody');
-      for(const r of p.raw){ const s=r.player_stats||{}; const tr=document.createElement('tr'); tr.innerHTML=`
-          <td><a href="${r.match_url}" target="_blank" rel="noopener">${r.match_title||r.resolved_match_id||'match'}</a></td>
-          <td>${r.league_label??''}</td>
-          <td>${r.match_datetime_utc??''}</td>
-          <td>${r.player_is_pom?'✅':''}</td>
-          <td>${(r.player_rating!=null?Number(r.player_rating).toFixed(2):'')}</td>
-          <td>${s?.goals??''}</td>
-          <td>${(s?.non_penalty_goals!=null?s.non_penalty_goals:((s?.goals||0)-(s?.penalty_goals||0)))}</td>
-          <td>${s?.penalty_goals??''}</td>
-          <td>${s?.assists??''}</td>
-          <td>${s?.yellow_cards??''}</td>
-          <td>${s?.red_cards??''}</td>
-          <td>${s?.full_match_played?'90+':''}</td>
-          <td class="muted small">${r.source||''}</td>`; tb.appendChild(tr); }
-      grid.appendChild(table); card.appendChild(grid); return card;
+        <tbody></tbody>
+      `;
+      const tb = table.querySelector('tbody');
+
+      for(const r of (p.raw || [])){
+        const s = r.player_stats || {};
+        const tr = document.createElement('tr');
+        const npg = (s?.non_penalty_goals!=null ? s.non_penalty_goals : Math.max(0, (s?.goals||0)-(s?.penalty_goals||0)));
+        tr.innerHTML = `
+          <td><a href="${r.match_url}" target="_blank" rel="noopener">${r.match_title || r.resolved_match_id || 'match'}</a></td>
+          <td>${r.league_label ?? ''}</td>
+          <td>${r.match_datetime_utc ?? ''}</td>
+          <td>${r.player_is_pom ? '✅' : ''}</td>
+          <td>${(r.player_rating!=null? Number(r.player_rating).toFixed(2) : '')}</td>
+          <td>${s?.goals ?? ''}</td>
+          <td>${npg}</td>
+          <td>${s?.penalty_goals ?? ''}</td>
+          <td>${s?.assists ?? ''}</td>
+          <td>${s?.yellow_cards ?? ''}</td>
+          <td>${s?.red_cards ?? ''}</td>
+          <td>${s?.full_match_played ? '90+' : ''}</td>
+          <td class="muted small">${r.source || ''}</td>
+        `;
+        tb.appendChild(tr);
+      }
+
+      grid.appendChild(table);
+      card.appendChild(grid);
+      return card;
     }
 
-    let lastSummaryRows=[], lastDetailRows=[], lastJSON=null;
-    function toSummaryCSVRows(results){ const rows=[["player_name","player_url","checked","potm","goals","npg","pg","assists","yc","rc","fmp"]]; for(const p of results){ const agg=aggregatePlayerMatches(p.raw); rows.push([p.player_name,p.player_url,agg.checked,agg.potm,agg.goals,agg.npg,agg.pg,agg.assists,agg.yc,agg.rc,agg.fmp]); } return rows; }
-    function toDetailCSVRows(results){ const rows=[["player_name","player_url","match_url","match_title","league","date_utc","potm","rating","goals","npg","pg","assists","yc","rc","fmp","source"]]; for(const p of results){ for(const r of p.raw){ const s=r.player_stats||{}; rows.push([p.player_name,p.player_url,r.match_url,r.match_title||r.resolved_match_id||'',r.league_label??'',r.match_datetime_utc??'',r.player_is_pom?"1":"0",(r.player_rating!=null?String(Number(r.player_rating).toFixed(2)):''),s.goals??'',(s.non_penalty_goals!=null?s.non_penalty_goals:((s.goals||0)-(s.penalty_goals||0))),s.penalty_goals??'',s.assists??'',s.yellow_cards??'',s.red_cards??'',s.full_match_played?"1":"0",r.source||'']); } } return rows; }
+    let lastSummaryRows = [], lastDetailRows = [], lastJSON = null;
 
-    btnReset.addEventListener('click',()=>{ urlsEl.value=''; matchesEl.value=''; resultsEl.innerHTML=''; setStatusPills([{text:'Reset',type:'ok'}]); btnDownloadSummary.disabled=true; btnDownloadDetails.disabled=true; btnDownloadJSON.disabled=true; lastSummaryRows=[]; lastDetailRows=[]; lastJSON=null; });
+    function toSummaryCSVRows(results){
+      const rows = [["player_name","player_url","checked","potm","goals","npg","pg","assists","yc","rc","fmp"]];
+      for(const p of results){
+        const agg = aggregatePlayerMatches(p.raw);
+        rows.push([displayName(p), p.player_url, agg.checked, agg.potm, agg.goals, agg.npg, agg.pg, agg.assists, agg.yc, agg.rc, agg.fmp]);
+      }
+      return rows;
+    }
 
-    btnDiscover.addEventListener('click', async()=>{
-      resultsEl.innerHTML=''; setStatusPills([{text:'Discovering…',type:'warn'}]);
-      const rawLines=urlsEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-      if(!rawLines.length){ setStatusPills([{text:'Provide one or more player URLs',type:'error'}]); return; }
-      try{
-        const res=await fetch('/.netlify/functions/discover',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({urls:rawLines})});
-        const data=await res.json(); if(!data||!data.ok) throw new Error((data&&data.error)||'Discover failed');
-        const players=data.players||[]; const allMatches=[];
-        for(const p of players){ (p.match_urls||[]).forEach(u=>allMatches.push(u)); }
-        matchesEl.value=allMatches.join('\n');
-        setStatusPills([{text:`Players: ${players.length}`,type:'ok'},{text:`Matches found: ${allMatches.length}`,type:allMatches.length?'ok':'warn'}]);
-        window.__players=players.map(p=>({ player_url:p.player_url, player_name:(p.player_name||'').trim()||(p.player_url.split('/').pop()||'').replace(/-/g,' '), player_id:p.player_id||pidFromUrl(p.player_url)||null, match_urls:(p.match_urls||[]) }));
-      }catch(e){ setStatusPills([{text:`Discover error: ${String(e).slice(0,140)}`,type:'error'}]); }
+    function toDetailCSVRows(results){
+      const rows = [["player_name","player_url","match_url","match_title","league","date_utc","potm","rating","goals","npg","pg","assists","yc","rc","fmp","source"]];
+      for(const p of results){
+        for(const r of (p.raw || [])){
+          const s=r.player_stats||{};
+          const npg = (s?.non_penalty_goals!=null ? s.non_penalty_goals : Math.max(0, (s?.goals||0)-(s?.penalty_goals||0)));
+          rows.push([
+            displayName(p), p.player_url, r.match_url, r.match_title || r.resolved_match_id || '',
+            r.league_label ?? '', r.match_datetime_utc ?? '',
+            r.player_is_pom ? "1":"0",
+            (r.player_rating!=null ? String(Number(r.player_rating).toFixed(2)) : ''),
+            s.goals ?? '', npg,
+            s.penalty_goals ?? '', s.assists ?? '', s.yellow_cards ?? '', s.red_cards ?? '',
+            s.full_match_played ? "1":"0",
+            r.source || ''
+          ]);
+        }
+      }
+      return rows;
+    }
+
+    btnReset.addEventListener('click', ()=>{
+      urlsEl.value = '';
+      matchesEl.value = '';
+      resultsEl.innerHTML = '';
+      setStatusPills([{text:'Reset', type:'ok'}]);
+      btnDownloadSummary.disabled = true;
+      btnDownloadDetails.disabled = true;
+      btnDownloadJSON.disabled = true;
+      lastSummaryRows = []; lastDetailRows = []; lastJSON = null;
     });
 
-    btnRun.addEventListener('click', async()=>{
-      resultsEl.innerHTML=''; setStatusPills([{text:'Checking matches…',type:'warn'}]); btnDownloadSummary.disabled=true; btnDownloadDetails.disabled=true; btnDownloadJSON.disabled=true;
-      const discovered=(window.__players&&window.__players.length)?window.__players:[];
-      const pasted=matchesEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+    btnDiscover.addEventListener('click', async ()=>{
+      resultsEl.innerHTML = '';
+      setStatusPills([{text:'Discovering…', type:'warn'}]);
+
+      const rawLines = urlsEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+      if(!rawLines.length){
+        setStatusPills([{text:"Provide one or more player URLs", type:'error'}]);
+        return;
+      }
+
+      try{
+        const res = await fetch('/.netlify/functions/discover', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ urls: rawLines })
+        });
+        const data = await res.json();
+        if(!data || !data.ok){ throw new Error((data && data.error) || 'Discover failed'); }
+
+        const players = data.players || [];
+        const allMatches = [];
+        for(const p of players){
+          (p.match_urls||[]).forEach(u=>allMatches.push(u));
+        }
+        matchesEl.value = allMatches.join('\n');
+
+        setStatusPills([
+          {text:`Players: ${players.length}`, type:'ok'},
+          {text:`Matches found: ${allMatches.length}`, type: allMatches.length ? 'ok' : 'warn'}
+        ]);
+
+        // Stash players discovered for the run; ensure player_id exists
+        window.__players = players.map(p => ({
+          player_url: p.player_url,
+          player_name: (p.player_name || '').trim() || (p.player_url.split('/').pop() || '').replace(/-/g,' '),
+          player_id: p.player_id || pidFromUrl(p.player_url) || null,
+          match_urls: (p.match_urls||[])
+        }));
+      }catch(e){
+        setStatusPills([{text:`Discover error: ${String(e).slice(0,140)}`, type:'error'}]);
+      }
+    });
+
+    btnRun.addEventListener('click', async ()=>{
+      resultsEl.innerHTML = '';
+      setStatusPills([{text:'Checking matches…', type:'warn'}]);
+      btnDownloadSummary.disabled = true; btnDownloadDetails.disabled = true; btnDownloadJSON.disabled = true;
+
+      const discovered = (window.__players && window.__players.length) ? window.__players : [];
+      const pasted = matchesEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
 
       const players = discovered.length ? discovered : [{ player_url:'', player_name:'(unknown)', player_id:null, match_urls:pasted }];
 
-      const results=[];
-      for(const p of players){
-        const matchUrls=(p.match_urls&&p.match_urls.length)?p.match_urls:pasted.filter(u=>/\/match\/\d+/.test(u));
-        const pid=p.player_id??pidFromUrl(p.player_url); // ALWAYS pass numeric id to the checker
-        if(!pid){ appendStatus(`No playerId for ${p.player_name}`, 'warn'); }
+      const results = [];
 
-        const tasks=matchUrls.map(u=>({ matchUrl:u, playerId:pid, playerName:p.player_name||'' }));
-        const perMatch=await throttleQueue(tasks,3,async(t)=>{
+      for(const p of players){
+        const matchUrls = (p.match_urls && p.match_urls.length) ? p.match_urls
+                          : pasted.filter(u => /\/match\/\d+/.test(u));
+
+        // ALWAYS pass numeric id to the checker (prevents alias issues)
+        const pid = p.player_id ?? pidFromUrl(p.player_url);
+
+        const tasks = matchUrls.map(u => ({ matchUrl:u, playerId:pid, playerName:p.player_name || '' }));
+        const perMatch = await throttleQueue(tasks, 3, async (t)=>{
           try{
-            const res=await fetch('/.netlify/functions/check',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ playerId:t.playerId||undefined, playerName:t.playerName||undefined, matchUrl:t.matchUrl })});
-            const j=await res.json();
-            if(j && j.league_allowed && j.within_season_2025_26){ return j; }
-            return { match_url:t.matchUrl, error:'Filtered (league/season)', player_stats:{} };
-          }catch(err){ return { match_url:t.matchUrl, error:String(err), player_stats:{} }; }
+            const res = await fetch('/.netlify/functions/check', {
+              method: 'POST',
+              headers: { 'content-type':'application/json' },
+              body: JSON.stringify({
+                playerId: t.playerId || undefined,
+                playerName: t.playerName || undefined,
+                matchUrl: t.matchUrl
+              })
+            });
+            const j = await res.json();
+            // Only keep Top-5 + 2025–26 here; skip errors entirely
+            if (j && j.league_allowed && j.within_season_2025_26) return j;
+            return null;
+          }catch(err){
+            return null;
+          }
         });
-        const kept=perMatch.filter(Boolean);
-        results.push({ player_url:p.player_url, player_name:p.player_name, checked_matches:kept.filter(r=>!r.error).length, raw:kept });
-        appendStatus(`✓ ${p.player_name}: ${kept.length} checked`,'ok');
+
+        const keptOk = (perMatch || []).filter(Boolean); // keep only success rows
+        results.push({
+          player_url: p.player_url,
+          player_name: p.player_name,
+          checked_matches: keptOk.length,
+          raw: keptOk
+        });
+        appendStatus(`✓ ${displayName(p)}: ${keptOk.length} checked`, 'ok');
       }
 
-      resultsEl.innerHTML=''; if(!results.length){ setStatusPills([{text:'No results',type:'warn'}]); return; }
-      for(const r of results){ resultsEl.appendChild(renderPlayerCard({ player_name:r.player_name, player_url:r.player_url||'', raw:r.raw })); }
+      // Render
+      resultsEl.innerHTML = '';
+      if(!results.length){
+        setStatusPills([{text:'No results', type:'warn'}]);
+        return;
+      }
 
-      lastSummaryRows=toSummaryCSVRows(results); lastDetailRows=toDetailCSVRows(results); lastJSON={results};
-      btnDownloadSummary.disabled=false; btnDownloadDetails.disabled=false; btnDownloadJSON.disabled=false;
-      setStatusPills([{text:`Players processed: ${results.length}`,type:'ok'},{text:`Matches checked: ${results.reduce((a,p)=>a+p.raw.filter(x=>!x.error).length,0)}`,type:'ok'}]);
+      for(const r of results){
+        resultsEl.appendChild(renderPlayerCard({
+          player_name:r.player_name,
+          player_url:r.player_url || '',
+          raw:r.raw
+        }));
+      }
+
+      // Build downloads
+      lastSummaryRows = toSummaryCSVRows(results);
+      lastDetailRows = toDetailCSVRows(results);
+      lastJSON = { results };
+
+      btnDownloadSummary.disabled = false;
+      btnDownloadDetails.disabled = false;
+      btnDownloadJSON.disabled = false;
+
+      setStatusPills([
+        {text:`Players processed: ${results.length}`, type:'ok'},
+        {text:`Matches checked: ${results.reduce((a,p)=>a+p.raw.length,0)}`, type:'ok'}
+      ]);
     });
 
-    qs('#btnDownloadSummary').addEventListener('click',()=>{ if(!lastSummaryRows.length) return; downloadCSV('summary_potm_stats_2025_26.csv', lastSummaryRows); });
-    qs('#btnDownloadDetails').addEventListener('click',()=>{ if(!lastDetailRows.length) return; downloadCSV('details_potm_stats_2025_26.csv', lastDetailRows); });
-    qs('#btnDownloadJSON').addEventListener('click',()=>{ if(!lastJSON) return; downloadJSON('potm_stats_2025_26.json', lastJSON); });
+    // Download actions
+    document.getElementById('btnDownloadSummary').addEventListener('click', ()=> {
+      if (!lastSummaryRows.length) return;
+      downloadCSV('summary_potm_stats_2025_26.csv', lastSummaryRows);
+    });
+    document.getElementById('btnDownloadDetails').addEventListener('click', ()=> {
+      if (!lastDetailRows.length) return;
+      downloadCSV('details_potm_stats_2025_26.csv', lastDetailRows);
+    });
+    document.getElementById('btnDownloadJSON').addEventListener('click', ()=> {
+      if (!lastJSON) return;
+      downloadJSON('potm_stats_2025_26.json', lastJSON);
+    });
 
-    // Prefill for testing
-    urlsEl.value=[
+    // Prefill example to speed up testing
+    urlsEl.value = [
       'https://www.fotmob.com/players/1467236/lamine-yamal',
       'https://www.fotmob.com/players/1021382/joao-pedro'
     ].join('\n');
