@@ -1,7 +1,10 @@
 // netlify/functions/check.mjs
-// Robust POTM + Highest (Top-5 leagues, 2025–26) with HTML (__NEXT_DATA__) fallback.
-// Reverts to the permissive scanner that produced correct POTM hits for Yamal.
-// Fixes: guard against null entries in arrays (no "in" on null), safe norm(), resilient league/time/title.
+// Robust POTM + Highest + per-match player stats (Top-5 leagues, 2025–26).
+// Keeps permissive __NEXT_DATA__ HTML fallback. Adds player_stats:
+//   goals, penalty_goals, non_penalty_goals, assists, yellow_cards, red_cards,
+//   minutes_played, full_match_played (>=90).
+//
+// Also fixes prior null checks ("in" on null) and keeps safe norm().
 
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1, 0, 0, 0));     // 2025-07-01
@@ -83,7 +86,7 @@ async function resolveMatchIdFromUrl(urlStr) {
   }
 }
 
-// ---------- Readers ----------
+// ---------- Ratings & metadata readers ----------
 function coerceRatingRow(p) {
   if (!p || typeof p !== "object") return null;
   const id = p?.id ?? p?.playerId ?? p?.player?.id ?? null;
@@ -109,11 +112,11 @@ function ratingsFromJson(json) {
   pushArr(json?.content?.playerRatings?.home?.players);
   pushArr(json?.content?.playerRatings?.away?.players);
 
-  // other common shapes
+  // common variants
   pushArr(json?.playerRatings?.home?.players);
   pushArr(json?.playerRatings?.away?.players);
 
-  // deep scan: look for arrays that *look* like ratings
+  // deep scan for arrays resembling ratings
   const stack = [json];
   while (stack.length) {
     const node = stack.pop();
@@ -121,7 +124,6 @@ function ratingsFromJson(json) {
     for (const [k,v] of Object.entries(node)) {
       if (!v) continue;
       if (Array.isArray(v)) {
-        // Guard each element before checking fields
         if (v.length && v.some(x => x && typeof x === "object" && (("rating" in x) || ("playerRating" in x) || (x.stats && typeof x.stats==="object" && "rating" in x.stats)))) {
           pushArr(v);
         }
@@ -211,6 +213,169 @@ function deriveTitle(obj, html) {
   return "vs";
 }
 
+// ---------- Player minutes (for FMP) ----------
+function getPlayerMinutes(root, playerId, playerName) {
+  let best = null;
+  const nTarget = norm(playerName || "");
+  const stack=[root];
+  const pickNum = (v) => Number.isFinite(Number(v)) ? Number(v) : null;
+
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node || typeof node !== "object") continue;
+
+    // look in common lineups/ratings nodes
+    const maybePlayer =
+      (node.id != null || node.playerId != null || node.player?.id != null || node.name || node.playerName || node.player?.name);
+
+    if (maybePlayer) {
+      const id = node.id ?? node.playerId ?? node.player?.id ?? null;
+      const nm = node.name ?? node.playerName ?? node.player?.name ?? null;
+
+      const idMatch = (playerId != null && Number(id) === Number(playerId));
+      const nameMatch = (!!nTarget && nm && norm(nm) === nTarget);
+
+      if (idMatch || nameMatch) {
+        const cands = [
+          pickNum(node.minutesPlayed),
+          pickNum(node.minsPlayed),
+          pickNum(node.timeOnPitch),
+          pickNum(node.timePlayed),
+          pickNum(node.minutes),
+          pickNum(node.playedMinutes),
+          pickNum(node.stats?.minutesPlayed),
+          pickNum(node.stats?.minsPlayed),
+        ].filter(v => v != null);
+
+        if (cands.length) {
+          const max = Math.max(...cands);
+          if (best == null || max > best) best = max;
+        }
+      }
+    }
+
+    for (const v of Object.values(node)) {
+      if (v && typeof v === "object") stack.push(v);
+      if (Array.isArray(v)) for (const it of v) if (it && typeof it === "object") stack.push(it);
+    }
+  }
+  return best; // may be null
+}
+
+// ---------- Events (goals/assists/cards) ----------
+function deepCollectEvents(root) {
+  const out = [];
+  const stack = [root];
+
+  const asId = (v) => Number.isFinite(Number(v)) ? Number(v) : null;
+  const str = (v) => (typeof v === "string" ? v : (v?.name || v?.fullName || ""));
+
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node || typeof node !== "object") continue;
+
+    // Candidate arrays: events, incidents, timeline, goals, cards, comments
+    for (const [k,v] of Object.entries(node)) {
+      if (!v) continue;
+
+      if (Array.isArray(v) && v.length && v.some(x => x && typeof x === "object")) {
+        // Normalize known shapes
+        for (const e of v) {
+          if (!e || typeof e !== "object") continue;
+
+          // Basic fields
+          const typeRaw = (e.type || e.eventType || e.incidentType || e.detailType || e.card || e.cardType || "").toString();
+          const subRaw = (e.detail || e.card || e.cardType || e.subType || "").toString();
+
+          const playerId =
+            asId(e.playerId) ?? asId(e.player?.id) ?? asId(e.mainPlayerId) ?? asId(e.actorId) ?? null;
+          const playerName =
+            str(e.player) || str(e.playerName) || str(e.mainPlayer) || str(e.actor) || e.name || null;
+
+          const assistId =
+            asId(e.assistId) ?? asId(e.assist?.id) ?? asId(e.secondaryPlayerId) ?? null;
+          const assistName =
+            str(e.assist) || str(e.secondaryPlayer) || e.assistName || null;
+
+          const isPenalty =
+            !!(e.isPenalty || /pen/i.test(typeRaw) || /pen/i.test(subRaw) || /penalty/i.test(e.reason || "") || /penalty/i.test(e.description || ""));
+
+          const ownGoal =
+            !!(/own/i.test(typeRaw) || /own/i.test(subRaw) || /own goal/i.test(e.reason || ""));
+
+          const minute =
+            e.minute ?? e.time ?? e.clock ? Number(e.minute || e.time || e.clock?.minute) : null;
+
+          // Classify
+          let kind = null;
+          const tr = typeRaw.toLowerCase();
+          const sr = subRaw.toLowerCase();
+
+          if (tr.includes("goal") || sr.includes("goal") || e.goal === true) {
+            kind = isPenalty ? "penalty_goal" : (ownGoal ? "own_goal" : "goal");
+          } else if (tr.includes("pen") && (tr.includes("scored") || tr.includes("converted"))) {
+            kind = "penalty_goal";
+          } else if (tr.includes("assist") || sr.includes("assist")) {
+            kind = "assist";
+          } else if (tr.includes("yellow") || sr.includes("yellow")) {
+            kind = sr.includes("second") || tr.includes("second") ? "second_yellow" : "yellow";
+          } else if (tr.includes("red") || sr.includes("red")) {
+            kind = "red";
+          }
+
+          if (kind) {
+            out.push({
+              kind,
+              playerId, playerName,
+              assistId, assistName,
+              isPenalty, ownGoal,
+              minute: Number.isFinite(minute) ? minute : null
+            });
+          }
+        }
+      } else if (typeof v === "object") {
+        stack.push(v);
+      }
+    }
+  }
+  return out;
+}
+
+function tallyPlayerStats(root, playerId, playerName) {
+  const events = deepCollectEvents(root);
+  const targetName = norm(playerName || "");
+  let goals = 0, pen = 0, assists = 0, yc = 0, rc = 0;
+
+  for (const e of events) {
+    const isMe =
+      (playerId != null && Number(e.playerId) === Number(playerId)) ||
+      (!!targetName && e.playerName && norm(e.playerName) === targetName);
+
+    // Count goals for *scorer*
+    if (isMe && (e.kind === "goal" || e.kind === "penalty_goal")) {
+      goals++;
+      if (e.kind === "penalty_goal" || e.isPenalty) pen++;
+    }
+
+    // Count assists if our player is the assister
+    const assistIsMe =
+      (playerId != null && Number(e.assistId) === Number(playerId)) ||
+      (!!targetName && e.assistName && norm(e.assistName) === targetName);
+    if (assistIsMe) assists++;
+
+    // Cards (if issued to our player)
+    if (isMe) {
+      if (e.kind === "yellow") yc++;
+      else if (e.kind === "second_yellow") { yc++; rc++; } // 2nd yellow → YC+1 and RC+1
+      else if (e.kind === "red") rc++;
+    }
+  }
+
+  const npg = goals - pen;
+  return { goals, penalty_goals: pen, non_penalty_goals: npg, assists, yellow_cards: yc, red_cards: rc };
+}
+
+// ---------- __NEXT_DATA__ fallback ----------
 function extractNextDataString(html) {
   const m = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
   return m ? m[1] : null;
@@ -218,7 +383,7 @@ function extractNextDataString(html) {
 function safeJSON(str) { try { return JSON.parse(str); } catch { return null; } }
 
 function deepScanNext(root) {
-  // Returns a merged "best effort" data-like block plus helpers
+  // Build best-effort data-like block
   const results = { blocks: [], ratings: [], potm: null, leagueId: null, leagueName: null, kickoff: null };
   const stack=[root];
   while (stack.length) {
@@ -234,13 +399,11 @@ function deepScanNext(root) {
       if (p) results.potm = p;
     }
 
-    // candidate block signal
     const looksLike =
       (node.general && (node.content?.playerRatings || node.content?.matchFacts || node.content?.lineups)) ||
       (node.content && (node.content.playerRatings || node.content.matchFacts));
     if (looksLike) results.blocks.push(node);
 
-    // push ratings if present at this node
     const rs = ratingsFromJson(node);
     if (rs.length) results.ratings = rs;
 
@@ -250,7 +413,6 @@ function deepScanNext(root) {
     }
   }
 
-  // synthesize minimal block if none found
   const block =
     results.blocks[0] ||
     { general: { leagueId: results.leagueId, leagueName: results.leagueName, matchTimeUTC: results.kickoff?.toISOString?.() || null }, content: {} };
@@ -262,14 +424,14 @@ function deepScanNext(root) {
     block.general.playerOfTheMatch = results.potm;
   }
 
-  return { data: block, helpers: results };
+  return { data: block };
 }
 
 async function nextFallbackJSON(matchUrl, knownHtml) {
   const { html } = knownHtml ? { finalUrl: matchUrl, html: knownHtml } : await fetchText(matchUrl);
   const nd = extractNextDataString(html);
   if (!nd) {
-    // last resort: direct regex for POTM in HTML
+    // last resort: regex POTM from HTML
     const rx = /"playerOfTheMatch"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"[^}]*?(?:"id"\s*:\s*(\d+))?/i;
     const m = html.match(rx);
     if (m) {
@@ -307,7 +469,6 @@ export async function handler(event) {
       return { statusCode: 400, headers: { "content-type":"application/json" }, body: JSON.stringify({ error:"Provide { playerId or playerName, matchUrl }" }) };
     }
 
-    // Resolve numeric matchId (also returns HTML if we fetched)
     const { matchId, finalUrl, html: maybeHtml } = await resolveMatchIdFromUrl(matchUrl);
     if (!matchId) {
       return { statusCode: 400, headers: { "content-type":"application/json" }, body: JSON.stringify({ error:"Could not resolve numeric matchId from matchUrl", matchUrl }) };
@@ -332,6 +493,7 @@ export async function handler(event) {
     const match_datetime_utc = dt ? dt.toISOString() : null;
     const within_season_2025_26 = dt ? (dt >= SEASON_START && dt <= SEASON_END) : false;
 
+    // Ratings (for POTM & "highest")
     const ratings = ratingsFromJson(data);
     const maxRating = ratings.length ? Math.max(...ratings.map(r => Number(r.rating || 0))) : null;
 
@@ -360,6 +522,22 @@ export async function handler(event) {
 
     const match_title = deriveTitle(data, htmlUsed);
 
+    // --------- NEW: per-match player stats ---------
+    const minutes_played = getPlayerMinutes(data, playerId, playerName);
+    const fmp = minutes_played != null ? (Number(minutes_played) >= 90) : false;
+
+    const tallied = tallyPlayerStats(data, playerId, playerName);
+    const player_stats = {
+      goals: tallied.goals,
+      penalty_goals: tallied.penalty_goals,
+      non_penalty_goals: tallied.non_penalty_goals,
+      assists: tallied.assists,
+      yellow_cards: tallied.yellow_cards,
+      red_cards: tallied.red_cards,
+      minutes_played: minutes_played,
+      full_match_played: fmp
+    };
+
     return {
       statusCode: 200,
       headers: { "content-type":"application/json" },
@@ -379,6 +557,7 @@ export async function handler(event) {
         potm_name: potm || null,
         potm_name_text: potmNameText,
         potm_id: potm?.id ?? null,
+        player_stats,
         source
       })
     };
