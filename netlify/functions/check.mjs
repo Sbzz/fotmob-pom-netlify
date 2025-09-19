@@ -1,6 +1,7 @@
 // netlify/functions/check.mjs
-// Robust POTM (and Highest Rating when possible) with HTML (__NEXT_DATA__) fallback.
-// Works with both match URL styles and blocked API (401/403).
+// Robust POTM + Highest (Top-5 leagues, 2025–26) with HTML (__NEXT_DATA__) fallback.
+// Reverts to the permissive scanner that produced correct POTM hits for Yamal.
+// Fixes: guard against null entries in arrays (no "in" on null), safe norm(), resilient league/time/title.
 
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1, 0, 0, 0));     // 2025-07-01
@@ -83,33 +84,36 @@ async function resolveMatchIdFromUrl(urlStr) {
 }
 
 // ---------- Readers ----------
+function coerceRatingRow(p) {
+  if (!p || typeof p !== "object") return null;
+  const id = p?.id ?? p?.playerId ?? p?.player?.id ?? null;
+  const name = p?.name ?? p?.playerName ?? p?.player?.name ?? "";
+  let rating = NaN;
+  if (p?.rating != null) rating = Number(p.rating);
+  else if (p?.stats?.rating != null) rating = Number(p.stats.rating);
+  else if (p?.playerRating != null) rating = Number(p.playerRating);
+  return (name || id != null) ? { id, name, rating } : null;
+}
+
 function ratingsFromJson(json) {
-  // search both canonical and variant shapes
   const out = [];
-  const push = (arr) => {
+  const pushArr = (arr) => {
     if (!Array.isArray(arr)) return;
-    for (const p of arr) {
-      const id = p?.id ?? p?.playerId ?? p?.player?.id ?? null;
-      const name = p?.name ?? p?.playerName ?? p?.player?.name ?? "";
-      const rating =
-        p?.rating != null ? Number(p.rating) :
-        p?.stats?.rating != null ? Number(p.stats.rating) :
-        p?.playerRating != null ? Number(p.playerRating) :
-        NaN;
-      if (name || id != null) out.push({ id, name, rating });
+    for (const item of arr) {
+      const row = coerceRatingRow(item);
+      if (row) out.push(row);
     }
   };
 
   // canonical
-  const home = json?.content?.playerRatings?.home?.players;
-  const away = json?.content?.playerRatings?.away?.players;
-  push(home); push(away);
+  pushArr(json?.content?.playerRatings?.home?.players);
+  pushArr(json?.content?.playerRatings?.away?.players);
 
-  // sometimes flattened
-  push(json?.playerRatings?.home?.players);
-  push(json?.playerRatings?.away?.players);
+  // other common shapes
+  pushArr(json?.playerRatings?.home?.players);
+  pushArr(json?.playerRatings?.away?.players);
 
-  // generic arrays with rating + (id|name)
+  // deep scan: look for arrays that *look* like ratings
   const stack = [json];
   while (stack.length) {
     const node = stack.pop();
@@ -117,13 +121,16 @@ function ratingsFromJson(json) {
     for (const [k,v] of Object.entries(node)) {
       if (!v) continue;
       if (Array.isArray(v)) {
-        // push arrays with objects that look like ratings
-        if (v.length && typeof v[0] === "object" && ("rating" in v[0] || "playerRating" in v[0])) push(v);
+        // Guard each element before checking fields
+        if (v.length && v.some(x => x && typeof x === "object" && (("rating" in x) || ("playerRating" in x) || (x.stats && typeof x.stats==="object" && "rating" in x.stats)))) {
+          pushArr(v);
+        }
         for (const it of v) if (it && typeof it === "object") stack.push(it);
-      } else if (typeof v === "object") stack.push(v);
+      } else if (typeof v === "object") {
+        stack.push(v);
+      }
     }
   }
-
   return out;
 }
 
@@ -156,7 +163,6 @@ function pickLeagueName(obj) {
   return null;
 }
 function pickKickoff(obj) {
-  // ISO-ish string
   const stack=[obj];
   while (stack.length) {
     const n = stack.pop();
@@ -176,17 +182,16 @@ function pickKickoff(obj) {
 }
 
 function explicitPOTM(obj) {
-  // look for playerOfTheMatch anywhere
   const stack=[obj];
   while (stack.length) {
     const n = stack.pop();
     if (!n || typeof n !== "object") continue;
-    if (n.playerOfTheMatch && (n.playerOfTheMatch.id != null || n.playerOfTheMatch.name)) {
+    if (n.playerOfTheMatch && (n.playerOfTheMatch.id != null || n.playerOfTheMatch.name || n.playerOfTheMatch.fullName)) {
       return n.playerOfTheMatch;
     }
     if (n.matchFacts && n.matchFacts.playerOfTheMatch) {
       const p = n.matchFacts.playerOfTheMatch;
-      if (p && (p.id != null || p.name)) return p;
+      if (p && (p.id != null || p.name || p.fullName)) return p;
     }
     for (const v of Object.values(n)) if (v && typeof v === "object") stack.push(v);
   }
@@ -195,8 +200,7 @@ function explicitPOTM(obj) {
 
 function deriveTitle(obj, html) {
   const g = obj?.general;
-  const n = g?.matchName;
-  if (n) return n;
+  if (g?.matchName) return g.matchName;
   const ht = g?.homeTeam?.name || obj?.homeTeam?.name || "";
   const at = g?.awayTeam?.name || obj?.awayTeam?.name || "";
   if (ht || at) return `${ht || "?"} vs ${at || "?"}`;
@@ -221,7 +225,6 @@ function deepScanNext(root) {
     const node = stack.pop();
     if (!node || typeof node!=="object") continue;
 
-    // league + time rolling capture
     if (results.leagueId == null) { const lid = pickLeagueId(node); if (lid != null) results.leagueId = lid; }
     if (!results.leagueName) { const ln = pickLeagueName(node); if (ln) results.leagueName = ln; }
     if (!results.kickoff) { const ko = pickKickoff(node); if (ko) results.kickoff = ko; }
@@ -231,13 +234,13 @@ function deepScanNext(root) {
       if (p) results.potm = p;
     }
 
-    // candidate block
+    // candidate block signal
     const looksLike =
       (node.general && (node.content?.playerRatings || node.content?.matchFacts || node.content?.lineups)) ||
       (node.content && (node.content.playerRatings || node.content.matchFacts));
     if (looksLike) results.blocks.push(node);
 
-    // push ratings if present
+    // push ratings if present at this node
     const rs = ratingsFromJson(node);
     if (rs.length) results.ratings = rs;
 
@@ -277,11 +280,8 @@ async function nextFallbackJSON(matchUrl, knownHtml) {
   }
   const obj = safeJSON(nd);
   if (!obj) throw new Error("NEXT_DATA JSON parse failed");
-
   const scan = deepScanNext(obj);
-  const data = scan.data;
-  const source = "next_html";
-  return { data, html, source };
+  return { data: scan.data, html, source: "next_html" };
 }
 
 // ---------- handler ----------
@@ -344,13 +344,15 @@ export async function handler(event) {
     const explicitP = data?.general?.playerOfTheMatch ?? data?.content?.matchFacts?.playerOfTheMatch ?? null;
     const potm = explicitP || (ratings.length ? (() => {
       const rs = [...ratings].sort((a,b)=>Number(b.rating||0) - Number(a.rating||0));
-      return rs[0] ? { id: rs[0].id ?? null, name: rs[0].name ?? null, by:"max_rating_fallback", rating: rs[0].rating ?? null } : null;
+      return rs[0] ? { id: rs[0].id ?? null, name: rs[0].name ?? null, fullName: rs[0].fullName ?? null, by:"max_rating_fallback", rating: rs[0].rating ?? null } : null;
     })() : null);
+
+    const potmNameText = potm ? (potm.fullName || potm.name || "") : "";
 
     const player_is_pom =
       potm
         ? ((pidOK && Number(potm.id) === playerId) ||
-           (!!nPlayer && potm.name && norm(potm.name) === nPlayer))
+           (!!nPlayer && potmNameText && norm(potmNameText) === nPlayer))
         : false;
 
     const has_highest_rating =
@@ -374,7 +376,8 @@ export async function handler(event) {
         has_highest_rating,
         player_rating: me?.rating ?? null,
         max_rating: maxRating,
-        potm_name: potm?.name || potm?.fullName ? { fullName: potm.fullName || potm.name } : (potm || null),
+        potm_name: potm || null,
+        potm_name_text: potmNameText,
         potm_id: potm?.id ?? null,
         source
       })
