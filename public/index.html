@@ -121,6 +121,9 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
 
 <script>
 (function(){
+  // ---------- config ----------
+  const DISCOVER_BATCH_SIZE = 6; // tune if needed
+
   // ---------- state & dom ----------
   const queued = new Map(); // url -> { name, url }
   const el = id => document.getElementById(id);
@@ -152,11 +155,10 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
   const setStatus = s => status.textContent = s;
   const log = s => { logBox.textContent += s + "\n"; logBox.scrollTop = logBox.scrollHeight; };
 
-  // URL normalization (identical for CSV & paste)
   function normalizeUrl(u){
     if(!u && u!==0) return '';
-    u = String(u).replace(/^\uFEFF/, '').trim();               // strip BOM + trim
-    u = u.replace(/^["']|["']$/g, '');                         // strip wrapping quotes
+    u = String(u).replace(/^\uFEFF/, '').trim();
+    u = u.replace(/^["']|["']$/g, '');
     const hashIdx = u.indexOf('#'); if(hashIdx >= 0) u = u.slice(0, hashIdx);
     const qIdx = u.indexOf('?');   if(qIdx   >= 0) u = u.slice(0, qIdx);
     u = u.replace(/^https?:\/\/(m\.)?fotmob\.com/i, 'https://www.fotmob.com');
@@ -248,7 +250,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
   });
   btnClear.addEventListener('click', ()=>{ queued.clear(); refreshQueuedUI(); log('Cleared queued players.'); });
 
-  // API calls (unchanged)
+  // API calls
   async function discover(urls){
     const res = await fetch('/.netlify/functions/discover', {
       method: 'POST', headers: { 'content-type':'application/json' }, body: JSON.stringify({ urls })
@@ -304,7 +306,6 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     }
   }
 
-  // simple async pool
   async function poolLimit(concurrency, tasks, worker){
     const ret = []; let i = 0; const running = new Set();
     return new Promise((resolve)=>{
@@ -322,14 +323,19 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     });
   }
 
-  // robust join (URL + playerId fallback)
-  function buildMapsFromDiscover(discPlayers){
+  function chunk(arr, size){
+    const out = [];
+    for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i, i+size));
+    return out;
+  }
+
+  function buildMapsFromDiscover(discPlayers, queuedMap){
     const byUrl = new Map();
     const byId  = new Map();
     for(const p of discPlayers || []){
       const normUrl = normalizeUrl(p.player_url || '');
       const idStr = p.player_id != null ? String(p.player_id) : playerIdFromUrl(normUrl);
-      const injectedName = (queued.get(normUrl) && queued.get(normUrl).name) || p.player_name || '';
+      const injectedName = (queuedMap.get(normUrl) && queuedMap.get(normUrl).name) || p.player_name || '';
       const item = {
         url: normUrl,
         name: injectedName,
@@ -342,7 +348,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     return { byUrl, byId };
   }
 
-  // Run flow
+  // Run flow with batched discover
   btnRun.addEventListener('click', async ()=>{
     setStatus('Running…'); log('Starting…');
 
@@ -350,28 +356,45 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     if(players.length===0){ log('No players queued.'); setStatus('Idle'); return; }
 
     kpiPlayers.textContent = `Players: ${players.length}`;
-    const urls = players.map(p=>p.url);
 
-    const disc = await discover(urls);
-    if(!disc || disc.ok === false){
-      setStatus('Discover error');
-      log(`Discover error: ${disc && (disc.error || disc.raw) || 'unknown'}`);
-      return;
-    }
-
-    const { byUrl, byId } = buildMapsFromDiscover(disc.players || []);
+    // --- batched discover ---
+    const batches = chunk(players, DISCOVER_BATCH_SIZE);
+    const combinedByUrl = new Map();
+    const combinedById  = new Map();
     let totalMatches = 0;
-    for(const v of byUrl.values()) totalMatches += v.match_urls.length;
-    kpiMatches.textContent = `Matches found: ${totalMatches}`;
-    log(`Matches found: ${totalMatches}`);
+    for(let bi=0; bi<batches.length; bi++){
+      const batch = batches[bi];
+      const urls = batch.map(p=>p.url);
+      log(`Discover batch ${bi+1}/${batches.length}: ${urls.length} players`);
+      const disc = await discover(urls);
+      if(!disc || disc.ok === false){
+        log(`Discover batch ${bi+1} error: ${disc && (disc.error || disc.raw) || 'unknown'}`);
+        continue;
+      }
+      const { byUrl, byId } = buildMapsFromDiscover(disc.players || [], queued);
+      // merge
+      for(const [k,v] of byUrl) {
+        combinedByUrl.set(k, v);
+        totalMatches += (v.match_urls ? v.match_urls.length : 0);
+      }
+      for(const [k,v] of byId) combinedById.set(k, v);
 
+      kpiMatches.textContent = `Matches found: ${totalMatches}`;
+      if(disc.meta && typeof disc.meta.ms === 'number'){
+        log(`Batch ${bi+1} OK: ~${disc.meta.ms}ms, matches +${Object.values(byUrl).length || 0}`);
+      }
+    }
+    log(`Total matches found (all batches): ${totalMatches}`);
+    kpiMatches.textContent = `Matches found: ${totalMatches}`;
+
+    // --- checks ---
     let checkedCount = 0;
     const perPlayer = [];
 
     for(const p of players){
       const norm = normalizeUrl(p.url);
       const idStr = playerIdFromUrl(norm);
-      let d = byUrl.get(norm) || (idStr ? byId.get(idStr) : null);
+      let d = combinedByUrl.get(norm) || (idStr ? combinedById.get(idStr) : null);
       if(!d){
         d = { match_urls: [], player_id: idStr ? Number(idStr) : null, name: p.name, url: norm };
       }
