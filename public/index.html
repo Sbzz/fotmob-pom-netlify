@@ -3,25 +3,32 @@
 <head>
   <meta charset="utf-8" />
   <title>POTM & Match Stats — Top 5 Leagues (2025–26)</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root{ --bg:#0b0d10; --card:#12161b; --muted:#1a2027; --text:#e9eef5; --sub:#9fb3c8; --accent:#6ee7b7; --accent-2:#60a5fa; --warn:#f59e0b; --error:#f87171; --ok:#34d399; --chip:#1f2937; --border:#223041; --shadow:0 10px 30px rgba(0,0,0,.35); --radius:16px; }
+    :root{
+      --bg:#0b0d10; --card:#12161b; --muted:#151b23; --text:#e9eef5; --sub:#9fb3c8;
+      --accent:#6ee7b7; --accent2:#60a5fa; --warn:#f59e0b; --error:#f87171; --ok:#34d399;
+      --chip:#1f2937; --border:#223041; --shadow:0 10px 30px rgba(0,0,0,.35); --radius:16px;
+    }
     *{box-sizing:border-box}
-    body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Apple Color Emoji","Segoe UI Emoji";background:linear-gradient(180deg,#0a0c10,#0b0d10 40%,#0b0d10);color:var(--text)}
-    .wrap{max-width:1100px;margin:40px auto;padding:0 20px}
-    header{display:flex;align-items:center;gap:14px;margin-bottom:18px}
-    header .logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent-2));box-shadow:var(--shadow)}
+    body{margin:0;background:linear-gradient(180deg,#0a0c10,#0b0d10 40%,#0b0d10);color:var(--text);
+         font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial}
+    a{color:var(--accent2);text-decoration:none}
+    .wrap{max-width:1100px;margin:40px auto;padding:0 18px}
+    header{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+    header .logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:var(--shadow)}
     header h1{font-size:22px;margin:0}
-    header .tag{margin-left:auto;background:rgba(110,231,183,.12);color:var(--accent);padding:6px 10px;border-radius:999px;border:1px solid rgba(110,231,183,.35);font-size:12px}
+    .tag{margin-left:auto;background:rgba(110,231,183,.12);color:var(--accent);padding:6px 10px;border-radius:999px;border:1px solid rgba(110,231,183,.35);font-size:12px}
     .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
     .controls{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:16px}
-    .controls .block{background:var(--muted);border:1px solid var(--border);border-radius:12px;padding:12px}
-    .controls label{display:block;font-size:12px;color:var(--sub);margin-bottom:8px}
-    textarea{width:100%;background:#0f141a;color:var(--text);border:1px solid #223041;border-radius:10px;padding:10px 12px;resize:vertical;min-height:90px}
+    .block{background:var(--muted);border:1px solid var(--border);border-radius:12px;padding:12px}
+    label{display:block;font-size:12px;color:var(--sub);margin-bottom:8px}
+    textarea{width:100%;background:#0f141a;color:var(--text);border:1px solid #223041;border-radius:10px;padding:10px 12px;resize:vertical;min-height:96px}
     .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}
-    button{appearance:none;border:0;background:linear-gradient(135deg,var(--accent-2),#38bdf8);color:#0b1220;padding:10px 14px;border-radius:12px;font-weight:700;cursor:pointer;box-shadow:var(--shadow)}
+    button{appearance:none;border:0;background:linear-gradient(135deg,var(--accent2),#38bdf8);color:#0b1220;padding:10px 14px;border-radius:12px;font-weight:700;cursor:pointer;box-shadow:var(--shadow)}
     button.secondary{background:#1f2a37;color:#e5eef7;border:1px solid #29415b;box-shadow:none}
     button.ghost{background:transparent;border:1px dashed #2a3c52;color:#c8d6e5}
+    button[disabled]{opacity:.6;cursor:not-allowed}
     .status{padding:14px 16px;border-top:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap}
     .pill{background:var(--chip);border:1px solid var(--border);color:#d3e0ef;padding:6px 10px;border-radius:999px;font-size:12px}
     .pill.ok{background:rgba(52,211,153,.12);color:var(--ok);border-color:rgba(52,211,153,.35)}
@@ -31,14 +38,14 @@
     .playerCard{padding:16px;border-radius:16px;background:linear-gradient(180deg,var(--card),#0f1318);border:1px solid var(--border)}
     .head{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:8px}
     .head .name{font-weight:800;font-size:18px}
-    .summaryLine{background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.35);color:#dbeafe;padding:10px 12px;border-radius:12px;font-size:14px;line-height:1.4;box-shadow:var(--shadow)}
+    .summaryLine{background:rgba(96,165,250,.11);border:1px solid rgba(96,165,250,.35);color:#dbeafe;padding:10px 12px;border-radius:12px;font-size:14px;line-height:1.4;box-shadow:var(--shadow)}
     .grid{overflow:auto;border:1px solid var(--border);border-radius:12px;margin-top:12px}
     table{width:100%;border-collapse:collapse;font-size:13px}
     th,td{padding:10px 12px;border-bottom:1px solid #1f2a33;white-space:nowrap}
     th{position:sticky;top:0;background:#10151b;color:#9fb3c8;font-weight:700}
     tr:hover td{background:#0f141a}
     .footerActions{margin-top:20px;display:flex;gap:10px;flex-wrap:wrap}
-    .muted{color:#9fb3c8}.small{font-size:12px}
+    .small{font-size:12px}.muted{color:#9fb3c8}
   </style>
 </head>
 <body>
@@ -46,7 +53,7 @@
     <header>
       <div class="logo"></div>
       <h1>POTM & Match Stats (Top-5 Leagues • 2025–26)</h1>
-      <span class="tag">Client • Netlify Functions</span>
+      <span class="tag">Netlify Functions</span>
     </header>
 
     <div class="card">
@@ -62,12 +69,14 @@
         </div>
 
         <div class="block">
-          <label>Discovered match URLs (auto) • You can paste match links here</label>
+          <label>Discovered match URLs (auto) — you can paste match links here</label>
           <textarea id="matches"></textarea>
           <div class="row">
             <button id="btnRun">2) Run Checks</button>
             <button class="ghost" id="btnDownloadSummary" disabled>Download Summary CSV</button>
             <button class="ghost" id="btnDownloadDetails" disabled>Download Details CSV</button>
+            <button class="ghost" id="btnDownloadPotmOnly" disabled>Download POTM Table</button>
+            <button class="ghost" id="btnDiscoverDebug" disabled>Download Discover Debug</button>
           </div>
         </div>
       </div>
@@ -78,35 +87,49 @@
 
     <div class="footerActions">
       <button class="ghost" id="btnDownloadJSON" disabled>Download JSON</button>
-      <span class="small muted">CSV “Summary” = per-player totals. CSV “Details” = per-match rows.</span>
+      <span class="small muted">Summary = per-player totals. Details = per-match rows. POTM Table = “player | POTM count”.</span>
     </div>
   </div>
 
   <script>
+    // ---------- DOM helpers ----------
     const qs=(s,el=document)=>el.querySelector(s);
-    const statusEl=qs('#status'), resultsEl=qs('#results');
-    const urlsEl=qs('#urls'), matchesEl=qs('#matches');
-    const btnDiscover=qs('#btnDiscover'), btnRun=qs('#btnRun'), btnReset=qs('#btnReset');
+    const urlsEl=qs('#urls'), matchesEl=qs('#matches'), resultsEl=qs('#results'), statusEl=qs('#status');
+    const btnDiscover=qs('#btnDiscover'), btnReset=qs('#btnReset'), btnRun=qs('#btnRun');
     const btnDownloadSummary=qs('#btnDownloadSummary'), btnDownloadDetails=qs('#btnDownloadDetails'), btnDownloadJSON=qs('#btnDownloadJSON');
+    const btnDownloadPotmOnly=qs('#btnDownloadPotmOnly'), btnDiscoverDebug=qs('#btnDiscoverDebug');
 
     function setStatusPills(pills){ statusEl.innerHTML=''; for(const p of pills){ const e=document.createElement('span'); e.className='pill '+(p.type||''); e.textContent=p.text; statusEl.appendChild(e);} }
     function appendStatus(text,type=''){ const e=document.createElement('span'); e.className='pill '+type; e.textContent=text; statusEl.appendChild(e); }
 
-    function throttleQueue(items, limit, worker){
-      return new Promise(async (resolve)=>{
-        let i=0, active=0, out=[];
-        const next=()=>{ if(i>=items.length && active===0) return resolve(out);
-          while(active<limit && i<items.length){
-            const idx=i++, item=items[idx]; active++;
-            Promise.resolve(worker(item,idx))
-              .then(res=>{ out[idx]=res; })
-              .catch(err=>{ out[idx]={error:String(err)}; })
-              .finally(()=>{ active--; next(); });
-          }
-        }; next();
-      });
+    // ---------- Robust fetch helpers ----------
+    async function fetchJSONSafe(url, opts={}){
+      const res  = await fetch(url, opts);
+      const text = await res.text();
+      let data = null;
+      try{ data = text ? JSON.parse(text) : null; }
+      catch(e){ throw new Error(`Bad JSON from ${url} (status ${res.status}). Body: ${text?.slice(0,200)||'<empty>'}`); }
+      if(!res.ok){
+        const msg=(data&&(data.error||data.message))||text||`HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      return data;
     }
 
+    // ---------- Utils ----------
+    const throttleQueue=(items,limit,worker)=>new Promise(resolve=>{
+      let i=0, active=0, out=[];
+      const next=()=>{ if(i>=items.length && active===0) return resolve(out);
+        while(active<limit && i<items.length){
+          const idx=i++, item=items[idx]; active++;
+          Promise.resolve(worker(item,idx))
+            .then(res=>{ out[idx]=res; })
+            .catch(err=>{ out[idx]={error:String(err)}; })
+            .finally(()=>{ active--; next(); });
+        }
+      };
+      next();
+    });
     function downloadCSV(filename, rows){
       const csv=[rows[0].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')]
         .concat(rows.slice(1).map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')))
@@ -114,31 +137,27 @@
       const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}), url=URL.createObjectURL(blob);
       const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     }
-    function downloadJSON(filename,obj){ const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
+    function downloadJSON(filename,obj){
+      const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
+      const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    }
 
-    // ----- Name helpers -----
-    const slugToName = (url) => { try{ const parts=new URL(url||'').pathname.split('/'); const slug=decodeURIComponent(parts[parts.length-1]||'').replace(/-/g,' ').trim(); return slug?slug.replace(/\b\w/g,c=>c.toUpperCase()):''; }catch{ return ''; } };
-    const resolveName = (player) => {
-      const a=(player?.player_name||'').trim();
-      if(a) return a;
-      for(const r of (player?.raw||[])){
-        if(r && r.echo_player_name){ const n=String(r.echo_player_name).trim(); if(n) return n; }
-      }
-      return slugToName(player?.player_url||'') || '(unknown)';
-    };
+    const slugToName=(url)=>{ try{ const parts=new URL(url||'').pathname.split('/'); const slug=decodeURIComponent(parts[parts.length-1]||'').replace(/-/g,' ').trim(); return slug?slug.replace(/\b\w/g,c=>c.toUpperCase()):''; }catch{ return ''; } };
+    const resolveName=(player)=>{ const a=(player?.player_name||'').trim(); if(a) return a;
+      for(const r of (player?.raw||[])){ if(r && r.echo_player_name){ const n=String(r.echo_player_name).trim(); if(n) return n; } }
+      return slugToName(player?.player_url||'') || '(unknown)'; };
     const pidFromUrl=(u)=>{ const m=(u||'').match(/\/players\/(\d+)(?:\/|$)/); return m?Number(m[1]):null; };
 
-    // aggregate (skip errored rows)
     function aggregate(rows){
       const ok=(rows||[]).filter(r=>r && !r.error);
-      const acc={goals:0,npg:0,pg:0,assists:0,yc:0,rc:0,fmp:0,potm:0,checked:0};
+      const acc={checked:0,potm:0,goals:0,npg:0,pg:0,assists:0,yc:0,rc:0,fmp:0};
       for(const r of ok){
         const s=r.player_stats||{};
         acc.checked+=1;
         if(r.player_is_pom) acc.potm+=1;
-        acc.goals += Number(s.goals||0);
-        acc.pg    += Number(s.penalty_goals||0);
-        acc.npg   += Math.max(0, Number(s.goals||0)-Number(s.penalty_goals||0));
+        const g=Number(s.goals||0), pg=Number(s.penalty_goals||0);
+        acc.goals += g; acc.pg += pg; acc.npg += Math.max(0, g-pg);
         acc.assists += Number(s.assists||0);
         acc.yc += Number(s.yellow_cards||0);
         acc.rc += Number(s.red_cards||0);
@@ -189,32 +208,81 @@
           <td class="muted small">${r.source||''}</td>`;
         tb.appendChild(tr);
       }
-      grid.appendChild(table); card.appendChild(grid); return card;
+      grid.appendChild(table); card.appendChild(grid);
+      return card;
     }
 
-    let lastSummary=[], lastDetails=[], lastJSON=null;
-    const toSummaryCSV=(res)=>{ const rows=[["player_name","player_url","checked","potm","goals","npg","pg","assists","yc","rc","fmp"]]; for(const p of res){ const a=aggregate(p.raw); rows.push([resolveName(p),p.player_url,a.checked,a.potm,a.goals,a.npg,a.pg,a.assists,a.yc,a.rc,a.fmp]); } return rows; };
-    const toDetailsCSV=(res)=>{ const rows=[["player_name","player_url","match_url","match_title","league","date_utc","potm","rating","goals","npg","pg","assists","yc","rc","fmp","source"]]; for(const p of res){ for(const r of (p.raw||[])){ const s=r.player_stats||{}; rows.push([resolveName(p),p.player_url,r.match_url,r.match_title||r.resolved_match_id||'',r.league_label??'',r.match_datetime_utc??'',r.player_is_pom?"1":"0",(r.player_rating!=null?String(Number(r.player_rating).toFixed(2)):""),s.goals??'',Math.max(0, Number(s.goals||0)-Number(s.penalty_goals||0)),s.penalty_goals??'',s.assists??'',s.yellow_cards??'',s.red_cards??'',s.full_match_played?"1":"0",r.source||'']); } } return rows; };
+    // ---------- State for downloads ----------
+    let lastSummary=[], lastDetails=[], lastPotmOnly=[], lastJSON=null, lastDiscoverDebug=null;
 
-    btnReset.addEventListener('click',()=>{ urlsEl.value=''; matchesEl.value=''; resultsEl.innerHTML=''; setStatusPills([{text:'Reset',type:'ok'}]); btnDownloadSummary.disabled=btnDownloadDetails.disabled=btnDownloadJSON.disabled=true; lastSummary=[]; lastDetails=[]; lastJSON=null; });
+    const toSummaryCSV=(res)=>{
+      const rows=[["player_name","player_url","checked","potm","goals","npg","pg","assists","yc","rc","fmp"]];
+      for(const p of res){ const a=aggregate(p.raw);
+        rows.push([resolveName(p),p.player_url,a.checked,a.potm,a.goals,a.npg,a.pg,a.assists,a.yc,a.rc,a.fmp]);
+      }
+      return rows;
+    };
+    const toPotmOnlyCSV=(res)=>{
+      const rows=[["player_name","player_url","potm"]];
+      for(const p of res){ const a=aggregate(p.raw); rows.push([resolveName(p),p.player_url,a.potm]); }
+      return rows;
+    };
+    const toDetailsCSV=(res)=>{
+      const rows=[["player_name","player_url","match_url","match_title","league","date_utc","potm","rating","goals","npg","pg","assists","yc","rc","fmp","source"]];
+      for(const p of res){ for(const r of (p.raw||[])){ const s=r.player_stats||{};
+        rows.push([resolveName(p),p.player_url,r.match_url,r.match_title||r.resolved_match_id||'',r.league_label??'',r.match_datetime_utc??'',r.player_is_pom?"1":"0",(r.player_rating!=null?String(Number(r.player_rating).toFixed(2)):""),s.goals??'',Math.max(0, Number(s.goals||0)-Number(s.penalty_goals||0)),s.penalty_goals??'',s.assists??'',s.yellow_cards??'',s.red_cards??'',s.full_match_played?"1":"0",r.source||'']);
+      }} return rows;
+    };
+
+    // ---------- UI actions ----------
+    btnReset.addEventListener('click',()=>{
+      urlsEl.value=''; matchesEl.value=''; resultsEl.innerHTML='';
+      lastSummary=[]; lastDetails=[]; lastPotmOnly=[]; lastJSON=null; lastDiscoverDebug=null;
+      btnDownloadSummary.disabled=btnDownloadDetails.disabled=btnDownloadJSON.disabled=btnDownloadPotmOnly.disabled=btnDiscoverDebug.disabled=true;
+      setStatusPills([{text:'Reset',type:'ok'}]);
+    });
 
     btnDiscover.addEventListener('click', async()=>{
       resultsEl.innerHTML=''; setStatusPills([{text:'Discovering…',type:'warn'}]);
       const lines=urlsEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-      if(!lines.length){ setStatusPills([{text:'Provide player URLs',type:'error'}]); return; }
+      if(!lines.length){ setStatusPills([{text:'Paste at least one FotMob player URL',type:'error'}]); return; }
+
       try{
-        const res=await fetch('/.netlify/functions/discover',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({urls:lines})});
-        const data=await res.json(); if(!data||!data.ok) throw new Error((data&&data.error)||'Discover failed');
-        const players=data.players||[]; const all=[]; for(const p of players){ (p.match_urls||[]).forEach(u=>all.push(u)); }
+        const data=await fetchJSONSafe('/.netlify/functions/discover',{
+          method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ urls: lines })
+        });
+        if(!data||!data.ok) throw new Error((data&&data.error)||'Discover failed');
+
+        const players=data.players||[]; const all=[];
+        for(const p of players){ (p.match_urls||[]).forEach(u=>all.push(u)); }
         matchesEl.value=all.join('\n');
+
         setStatusPills([{text:`Players: ${players.length}`,type:'ok'},{text:`Matches found: ${all.length}`,type:all.length?'ok':'warn'}]);
-        window.__players=players.map(p=>({ player_url:p.player_url, player_name:(p.player_name||'').trim() || (p.player_url.split('/').pop()||'').replace(/-/g,' '), player_id:p.player_id || (p.player_url && (p.player_url.match(/\/players\/(\d+)/)||[])[1]) || null, match_urls:(p.match_urls||[]) }));
-      }catch(e){ setStatusPills([{text:`Discover error: ${String(e).slice(0,140)}`,type:'error'}]); }
+
+        // save for run
+        window.__players = players.map(p=>({
+          player_url:p.player_url,
+          player_name:(p.player_name||'').trim() || (p.player_url.split('/').pop()||'').replace(/-/g,' '),
+          player_id:p.player_id || (p.player_url && (p.player_url.match(/\/players\/(\d+)/)||[])[1]) || null,
+          match_urls:(p.match_urls||[])
+        }));
+
+        // debug block for download
+        lastDiscoverDebug = (players||[]).map(p=>({
+          player_url:p.player_url, player_id:p.player_id, team_id:p.team_id, team_slug:p.team_slug,
+          matches_found:(p.match_urls||[]).length, debug:p.debug
+        }));
+        btnDiscoverDebug.disabled = !(lastDiscoverDebug && lastDiscoverDebug.length);
+        console.log('DISCOVER DEBUG:', lastDiscoverDebug);
+
+      }catch(e){
+        setStatusPills([{text:`Discover error: ${String(e).slice(0,180)}`,type:'error'}]);
+      }
     });
 
     btnRun.addEventListener('click', async()=>{
       resultsEl.innerHTML=''; setStatusPills([{text:'Checking matches…',type:'warn'}]);
-      btnDownloadSummary.disabled=btnDownloadDetails.disabled=btnDownloadJSON.disabled=true;
+      btnDownloadSummary.disabled=btnDownloadDetails.disabled=btnDownloadJSON.disabled=btnDownloadPotmOnly.disabled=true;
 
       const discovered=(window.__players&&window.__players.length)?window.__players:[];
       const pasted=matchesEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
@@ -228,11 +296,10 @@
 
         const perMatch=await throttleQueue(tasks,3,async(t)=>{
           try{
-            const r=await fetch('/.netlify/functions/check',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({playerId:t.playerId||undefined,playerName:t.playerName||undefined,matchUrl:t.matchUrl})});
-            const j=await r.json();
+            const j=await fetchJSONSafe('/.netlify/functions/check',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({playerId:t.playerId||undefined,playerName:t.playerName||undefined,matchUrl:t.matchUrl})});
             if(j && j.league_allowed && j.within_season_2025_26) return j;
             return null;
-          }catch{ return null; }
+          }catch(_e){ return null; }
         });
 
         const ok=(perMatch||[]).filter(Boolean);
@@ -249,17 +316,27 @@
       resultsEl.innerHTML='';
       for(const r of results) resultsEl.appendChild(renderPlayerCard(r));
 
-      lastSummary=toSummaryCSV(results); lastDetails=toDetailsCSV(results); lastJSON={results};
-      btnDownloadSummary.disabled=btnDownloadDetails.disabled=btnDownloadJSON.disabled=false;
+      lastSummary = toSummaryCSV(results);
+      lastDetails = toDetailsCSV(results);
+      lastPotmOnly = toPotmOnlyCSV(results);
+      lastJSON = { results };
+
+      btnDownloadSummary.disabled = btnDownloadDetails.disabled = btnDownloadJSON.disabled = btnDownloadPotmOnly.disabled = false;
 
       setStatusPills([{text:`Players processed: ${results.length}`,type:'ok'},{text:`Matches checked: ${results.reduce((a,p)=>a+p.raw.length,0)}`,type:'ok'}]);
     });
 
-    document.getElementById('btnDownloadSummary').addEventListener('click',()=>{ if(lastSummary.length) downloadCSV('summary_potm_stats_2025_26.csv', lastSummary); });
-    document.getElementById('btnDownloadDetails').addEventListener('click',()=>{ if(lastDetails.length) downloadCSV('details_potm_stats_2025_26.csv', lastDetails); });
-    document.getElementById('btnDownloadJSON').addEventListener('click',()=>{ if(lastJSON) downloadJSON('potm_stats_2025_26.json', lastJSON); });
+    // ---------- Downloads ----------
+    btnDownloadSummary.addEventListener('click',()=>{ if(lastSummary.length) downloadCSV('summary_potm_stats_2025_26.csv', lastSummary); });
+    btnDownloadDetails.addEventListener('click',()=>{ if(lastDetails.length) downloadCSV('details_potm_stats_2025_26.csv', lastDetails); });
+    btnDownloadPotmOnly.addEventListener('click',()=>{ if(lastPotmOnly.length) downloadCSV('potm_table_2025_26.csv', lastPotmOnly); });
+    btnDownloadJSON.addEventListener('click',()=>{ if(lastJSON) downloadJSON('potm_stats_2025_26.json', lastJSON); });
+    btnDiscoverDebug.addEventListener('click',()=>{
+      if(!lastDiscoverDebug) return;
+      downloadJSON('discover_debug.json', lastDiscoverDebug);
+    });
 
-    // quick test
+    // Optional: prefill a couple of sample players
     urlsEl.value=['https://www.fotmob.com/players/1467236/lamine-yamal','https://www.fotmob.com/players/1021382/joao-pedro'].join('\n');
   </script>
 </body>
