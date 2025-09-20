@@ -1,24 +1,39 @@
 // netlify/functions/check.mjs
-// Check one match URL for a given player (POTM + key stats) and emit a stable fixture fingerprint.
-// Fixes: accurate NPG/PG (multi-source), YC/RC from events + facts fallback, robust minutes fallback.
+// Keeps your existing FotMob logic for: POTM, FMP, assists, discovery, de-dup.
+// Adds secondary source (SofaScore) ONLY to improve: Penalty goals (PG) & Yellow/Red cards.
+// If SofaScore can't be matched (rate-limit/blocked/different slug), we keep the FotMob numbers.
 
+// ======= CONFIG =======
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1));                // 2025-07-01
 const SEASON_END   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59));   // 2026-06-30
 const NOW          = new Date();
 
+// Turn SofaScore augmentation on/off via env; defaults ON
+const USE_SOFASCORE = (process.env.USE_SOFASCORE ?? "1") !== "0";
+
+// Shared headers
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36";
-const HDRS = {
-  accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+const COMMON_HDRS = {
   "user-agent": UA,
-  referer: "https://www.fotmob.com/",
   "accept-language": "en-GB,en;q=0.9"
+};
+const FOTMOB_HDRS = {
+  ...COMMON_HDRS,
+  accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  referer: "https://www.fotmob.com/"
+};
+const SOFA_HDRS = {
+  ...COMMON_HDRS,
+  accept: "application/json,text/plain,*/*",
+  referer: "https://www.sofascore.com/"
 };
 
 const resp = (code, obj) => ({ statusCode: code, headers: { "content-type": "application/json" }, body: JSON.stringify(obj) });
 const asNum = (v) => Number.isFinite(Number(v)) ? Number(v) : null;
 const clampInt = (v) => Number.isFinite(v) ? Math.max(0, Math.trunc(v)) : 0;
 
+// ======= UTILS =======
 function toISO(v){
   if (!v) return null;
   const n = Number(v);
@@ -32,16 +47,25 @@ function toISO(v){
 function inSeason(iso){
   if(!iso) return false;
   const d = new Date(iso);
-  return d >= SEASON_START && d <= SEASON_END;
+  return d >= SEASON_START && d <= SEASON_END && d <= NOW;
 }
 
-async function fetchText(url){
-  const res = await fetch(url, { headers: HDRS, redirect: "follow" });
-  const html = await res.text();
+async function fetchText(url, headers){
+  const res = await fetch(url, { headers, redirect: "follow" });
+  const text = await res.text();
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-  if (!html) throw new Error("Empty HTML");
-  return { finalUrl: res.url || url, html };
+  if (!text) throw new Error("Empty response");
+  return { finalUrl: res.url || url, text };
 }
+async function fetchJSON(url, headers){
+  const res = await fetch(url, { headers, redirect: "follow" });
+  const txt = await res.text();
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+  if (!txt) throw new Error("Empty response");
+  try { return { finalUrl: res.url || url, json: JSON.parse(txt) }; }
+  catch { throw new Error("Bad JSON from " + url); }
+}
+
 function nextDataStr(html){
   const m = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
   return m ? m[1] : null;
@@ -63,7 +87,6 @@ function* walk(root){
 }
 function normName(s){ return String(s||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim(); }
 
-// Stable key for a fixture (minute precision)
 function mkFixtureKey(leagueId, iso, hId, aId, hName, aName){
   const lid = leagueId ?? 'X';
   const t   = (iso||'').slice(0,16); // YYYY-MM-DDTHH:MM
@@ -72,7 +95,7 @@ function mkFixtureKey(leagueId, iso, hId, aId, hName, aName){
   return `L${lid}|${t}|${H}|${A}`;
 }
 
-// ---- General from match __NEXT_DATA__ ----
+// ======= FOTMOB PARSERS (your existing logic kept) =======
 function extractGeneral(root){
   let leagueId=null, leagueName=null, iso=null, title=null, mid=null;
   let hId=null, aId=null, hName=null, aName=null;
@@ -105,7 +128,6 @@ function extractGeneral(root){
 }
 
 function extractPOTM(root){
-  // Prefer explicit fields
   for(const node of walk(root)){
     const potm = node?.playerOfTheMatch || node?.potm || node?.manOfTheMatch;
     if(potm && (potm.id || potm.playerId || potm.name)){
@@ -115,7 +137,7 @@ function extractPOTM(root){
       return { id, name: nm, rating: ratingNum };
     }
   }
-  // Fallback: top rating with isTopRating && finished
+  // Fallback: top rating & finished
   let best = null;
   for(const node of walk(root)){
     if(!node?.rating) continue;
@@ -157,12 +179,10 @@ function findPlayerNode(root, playerId, playerName){
 function extractStatsFromStatsBlocks(node){
   const acc = { goals:null, penalty_goals:null, assists:null, yellow_cards:null, red_cards:null, minutes_played:null, rating:null };
   if(!node) return acc;
-  // direct fields first
   if(Number.isFinite(Number(node.minutesPlayed))) acc.minutes_played = Number(node.minutesPlayed);
   if(node?.rating?.num!=null && Number.isFinite(Number(node.rating.num))) acc.rating = Number(node.rating.num);
 
   if(!Array.isArray(node.stats)) return acc;
-
   const pick = (labels) => {
     for(const lab of labels){
       for(const section of node.stats){
@@ -173,7 +193,6 @@ function extractStatsFromStatsBlocks(node){
     }
     return null;
   };
-
   const rating = pick(["FotMob rating","Rating","Match rating"]);
   const mins   = pick(["Minutes played","Minutes","Time played"]);
   const goals  = pick(["Goals","Total goals"]);
@@ -193,235 +212,113 @@ function extractStatsFromStatsBlocks(node){
   return acc;
 }
 
-// ---------- EVENTS extraction (goals/penalties/assists/cards) ----------
-function extractFromEvents(root, playerId, playerName){
-  const acc = { goals:0, penalty_goals:0, assists:0, yellow_cards:0, red_cards:0 };
-  const tName = normName(playerName||'');
+// ======= SOFASCORE AUGMENT (only PG + cards) =======
+function cleanTeam(s){
+  return normName(s).replace(/\b(cf|fc|sc|ac|club|cd|ud|sd|de|real|athletic|atletico)\b/g,'').replace(/[^a-z ]/g,'').replace(/\s+/g,' ').trim();
+}
+function approxSameTeam(a,b){
+  a = cleanTeam(a); b = cleanTeam(b);
+  if(a===b) return true;
+  return a.includes(b) || b.includes(a);
+}
 
-  const matchId = (ev) => {
-    const pid = asNum(
-      ev?.player?.id ?? ev?.playerId ?? ev?.actor?.id ?? ev?.participant?.id ??
-      ev?.subject?.id ?? ev?.player1Id ?? ev?.playerId1
-    );
-    const nm  = ev?.player?.name?.fullName || ev?.playerName || ev?.player || ev?.actor?.name || ev?.name || ev?.subject?.name || ev?.player1Name || null;
-    if(playerId && pid === playerId) return true;
-    if(!playerId && nm && normName(nm)===tName) return true;
-    if(Array.isArray(ev?.players)){ // some feeds list players array
-      for(const pl of ev.players){
-        const id = asNum(pl?.id);
-        const fn = pl?.name?.fullName || pl?.name;
-        if(playerId && id===playerId) return true;
-        if(!playerId && fn && normName(fn)===tName) return true;
-      }
-    }
+async function findSofaEventId({ homeName, awayName, iso }){
+  // Query by teams; then filter by kickoff proximity ±12h and by both team names.
+  const q = encodeURIComponent(`${homeName} ${awayName}`);
+  const url = `https://api.sofascore.com/api/v1/search/all?q=${q}`;
+  const { json } = await fetchJSON(url, SOFA_HDRS);
+  const ts = Math.floor(new Date(iso).getTime()/1000);
+  const lo = ts - 12*3600, hi = ts + 12*3600;
+
+  const events = json?.events || json?.results?.events || [];
+  let best = null, bestScore = -1;
+
+  for(const ev of events){
+    const start = asNum(ev?.startTimestamp);
+    if(!start || start < lo || start > hi) continue;
+
+    const hn = ev?.homeTeam?.name || ev?.homeTeam?.shortName || '';
+    const an = ev?.awayTeam?.name || ev?.awayTeam?.shortName || '';
+    if(!hn || !an) continue;
+
+    const teamHit = (approxSameTeam(hn, homeName) && approxSameTeam(an, awayName)) ||
+                    (approxSameTeam(hn, awayName) && approxSameTeam(an, homeName));
+    if(!teamHit) continue;
+
+    // score by closeness in time + exact-ish match bonus
+    let score = 0;
+    score += 10 - Math.min(10, Math.abs(start - ts)/600); // up to 10 points
+    if(approxSameTeam(hn, homeName)) score += 2;
+    if(approxSameTeam(an, awayName)) score += 2;
+
+    if(score > bestScore){ bestScore = score; best = ev; }
+  }
+
+  return best?.id ?? null;
+}
+
+async function sofaIncidentsToCounts(sofaEventId, playerName){
+  const { json } = await fetchJSON(`https://api.sofascore.com/api/v1/event/${sofaEventId}/incidents`, SOFA_HDRS);
+  const tName = normName(playerName);
+
+  const matchPlayer = (obj)=>{
+    const nm = obj?.player?.name || obj?.playerName || obj?.playerShortName || obj?.playerSlug || obj?.player ?? null;
+    if(nm && normName(nm)===tName) return true;
+    // also check 'assist' player objects for cards (rare)
+    const a = obj?.assistant || obj?.assistPlayer;
+    if(a && normName(a?.name||a)===tName) return true;
     return false;
   };
 
-  const assistMatch = (ev) => {
-    const ids = [];
-    const names = [];
-    if (ev?.assist) { ids.push(asNum(ev.assist.id)); names.push(ev.assist?.name?.fullName || ev.assistName); }
-    if (ev?.assistId!=null) ids.push(asNum(ev.assistId));
-    if (ev?.assisterId!=null) ids.push(asNum(ev.assisterId));
-    if (ev?.assistPlayerId!=null) ids.push(asNum(ev.assistPlayerId));
-    if (ev?.secondaryPlayerId!=null) ids.push(asNum(ev.secondaryPlayerId));
-    if (Array.isArray(ev?.assists)) for(const a of ev.assists){ ids.push(asNum(a?.id)); names.push(a?.name?.fullName||a?.name); }
-    if (Array.isArray(ev?.assistPlayers)) for(const a of ev.assistPlayers){ ids.push(asNum(a?.id)); names.push(a?.name?.fullName||a?.name); }
-    if(playerId && ids.some(id => id===playerId)) return true;
-    if(!playerId){
-      for(const nm of names){ if(nm && normName(nm)===tName) return true; }
+  let goals=0, pg=0, yc=0, rc=0;
+
+  const all = []
+    .concat(json?.incidents || [])
+    .concat(json?.events || [])
+    .concat(json?.timeline || [])
+    .filter(Boolean);
+
+  for(const ev of all){
+    const type = String(ev?.type || ev?.incidentType || ev?.category || '').toLowerCase();
+
+    // goals
+    if((type.includes('goal') || ev?.isGoal === true) && matchPlayer(ev)){
+      goals += 1;
+      const pen = ev?.isPenalty === true ||
+                  /pen/.test(String(ev?.goalType||ev?.shotType||ev?.description||'').toLowerCase());
+      if(pen) pg += 1;
     }
-    return false;
-  };
 
-  const text = (...xs)=> String(xs.find(v=>v!=null) ?? '').toLowerCase();
-  const isGoalEvent = (ev) => {
-    const t = text(ev.type, ev.eventType, ev.incidentType, ev.key, ev.code, ev.kind, ev.result, ev.action);
-    const d = text(ev.detail, ev.subType, ev.scoringType, ev.goalType, ev.outcome, ev.description);
-    return t.includes('goal') || d.includes('goal') || t==='score' || t==='scored' || ev?.isGoal===true;
-  };
-  const isOwnGoal = (ev) => {
-    const t = text(ev.detail, ev.subType, ev.scoringType, ev.goalType, ev.description, ev.result);
-    return t.includes('own') || ev?.isOwnGoal === true || t.includes('og');
-  };
-  const isPenaltyGoal = (ev) => {
-    const t = text(ev.type, ev.eventType, ev.scoringType, ev.goalType, ev.detail, ev.subType, ev.situation, ev.description, ev.shotType?.name);
-    return /pen/.test(t) || ev?.isPenalty === true || ev?.penalty === true || ev?.code === 'penaltyScored';
-  };
-  const isYellow = (ev) => {
-    const t = text(ev.type, ev.eventType, ev.key, ev.card, ev.cardType, ev.kind, ev.incidentType, ev.description, ev.color, ev.code);
-    const d = text(ev.detail, ev.subType);
-    return t.includes('yellow') || d.includes('yellow') || ev?.card === 'yellow' || ev?.color === 'yellow' || ev?.cardType === 'YELLOW' || ev?.code === 'yellowCard';
-  };
-  const isRed = (ev) => {
-    const t = text(ev.type, ev.eventType, ev.key, ev.card, ev.cardType, ev.kind, ev.incidentType, ev.description, ev.color, ev.code);
-    const d = text(ev.detail, ev.subType);
-    return t.includes('red') || d.includes('red') || ev?.card === 'red' || ev?.color === 'red' || ev?.cardType === 'RED' || ev?.code === 'redCard' || d.includes('second yellow');
-  };
-
-  // Collect arrays that look event-ish
-  const arrays = new Set();
-  for(const node of walk(root)){
-    for (const [k,val] of Object.entries(node||{})){
-      if(Array.isArray(val) && val.length){
-        const e0 = val[0];
-        const lowerKey = String(k).toLowerCase();
-        if(
-          /event|timeline|incident|card|goal|booking/.test(lowerKey) ||
-          (e0 && typeof e0==='object' && (
-            'type' in e0 || 'eventType' in e0 || 'key' in e0 || 'card' in e0 ||
-            'isGoal' in e0 || 'result' in e0 || 'assist' in e0 || 'player' in e0
-          ))
-        ){
-          arrays.add(val);
-        }
-      }
+    // cards
+    if((type.includes('card') || ev?.card) && matchPlayer(ev)){
+      const color = String(ev?.color || ev?.card || ev?.cardType || '').toLowerCase();
+      const desc  = String(ev?.description || ev?.detail || '').toLowerCase();
+      if(color.includes('yellow') || ev?.code === 'yellowCard') yc += 1;
+      if(color.includes('red')    || ev?.code === 'redCard' || desc.includes('second yellow')) rc += 1;
     }
   }
 
-  let sawYellowAsSecond = false;
-  for(const arr of arrays){
-    for(const ev of arr){
-      if(!ev || typeof ev!=='object') continue;
-
-      // Goals (exclude own goals)
-      if(isGoalEvent(ev) && matchId(ev) && !isOwnGoal(ev)){
-        acc.goals += 1;
-        if(isPenaltyGoal(ev)) acc.penalty_goals += 1;
-      }
-
-      // Assists (on the scoring event)
-      if(isGoalEvent(ev) && assistMatch(ev) && !isOwnGoal(ev)){
-        acc.assists += 1;
-      }
-
-      // Cards
-      if(matchId(ev)){
-        if(isYellow(ev)) acc.yellow_cards += 1;
-        if(isRed(ev)) {
-          acc.red_cards += 1;
-          if(text(ev.detail).includes('second yellow')) sawYellowAsSecond = true;
-        }
-      }
-    }
-  }
-  if(sawYellowAsSecond && acc.yellow_cards===0) acc.yellow_cards = 1;
-
-  return acc;
+  return { goals, pg, yc, rc };
 }
 
-// ---- EXTRA FALLBACK just for cards (facts/bookings style blocks) ----
-function extractCardsFromFacts(root, playerId, playerName){
-  const out = { yellow:0, red:0 };
-  const tName = normName(playerName||'');
-
-  const isMe = (obj)=>{
-    const id = asNum(obj?.playerId ?? obj?.id ?? obj?.player?.id ?? obj?.personId);
-    const nm = obj?.player?.name?.fullName || obj?.playerName || obj?.name || null;
-    if(playerId && id === playerId) return true;
-    if(!playerId && nm && normName(nm)===tName) return true;
-    return false;
-  };
-  const colorOf = (obj)=>{
-    const raw = String(obj?.card ?? obj?.cardType ?? obj?.color ?? obj?.type ?? obj?.code ?? '').toLowerCase();
-    if(raw.includes('yellow') || raw==='yc' || raw==='yellowcard' || raw==='yellow_card') return 'yellow';
-    if(raw.includes('red')    || raw==='rc' || raw==='redcard'    || raw==='red_card'    || raw==='secondyellow') return 'red';
-    if(String(obj?.description||'').toLowerCase().includes('second yellow')) return 'red';
-    return null;
-  };
-
-  for(const node of walk(root)){
-    // common places: matchFacts.cards, facts.bookings, content blocks
-    const arrays = [];
-    if(Array.isArray(node?.cards)) arrays.push(node.cards);
-    if(Array.isArray(node?.bookings)) arrays.push(node.bookings);
-    if(Array.isArray(node?.content)) arrays.push(node.content);
-    for(const arr of arrays){
-      for(const it of arr){
-        if(!it || typeof it!=='object') continue;
-        const col = colorOf(it);
-        if(!col) continue;
-        if(isMe(it)){
-          if(col==='yellow') out.yellow += 1;
-          if(col==='red')    out.red    += 1;
-        }
-      }
-    }
-  }
-  return out;
-}
-
-// ---- Fallback: derive from SHOTMAP if events missing ----
-function extractFromShotmap(root, playerId, playerName){
-  const acc = { goals:0, penalty_goals:0 };
-  const tName = normName(playerName||'');
-
-  for(const node of walk(root)){
-    const id   = asNum(node?.id ?? node?.playerId);
-    const name = node?.name?.fullName || node?.name || null;
-
-    if(!Array.isArray(node?.shotmap)) continue;
-    const isMe = (playerId && id===playerId) || (!playerId && name && normName(name)===tName);
-    if(!isMe) continue;
-
-    for(const sh of node.shotmap){
-      if(!sh || typeof sh!=='object') continue;
-      const goal = sh.isGoal === true || String(sh?.result||'').toLowerCase()==='goal';
-      const pen  = sh.isPenalty === true || String(sh?.situation||'').toLowerCase().includes('pen') ||
-                   String(sh?.shotType?.name||'').toLowerCase().includes('pen');
-      const own  = sh.isOwnGoal === true || String(sh?.description||'').toLowerCase().includes('own');
-      if(goal && !own){ acc.goals += 1; if(pen) acc.penalty_goals += 1; }
-    }
-  }
-  return acc;
-}
-
-function buildResult(payload){
-  const { matchUrl, general, potm, playerNode, playerId, playerName, next } = payload;
+// ======= BUILD PER-MATCH RESULT =======
+function buildFotmobOnly({ matchUrl, general, potm, playerNode, playerId, playerName, next }){
+  // Base (existing) — we’ll optionally augment PG/YC/RC afterwards
   const league_id   = asNum(general.leagueId);
   const league_name = general.leagueName || null;
   const iso         = general.iso || null;
-  const allowed     = league_id!=null && TOP5_LEAGUE_IDS.has(league_id);
-  const within      = !!iso && inSeason(iso) && (new Date(iso) <= NOW);
 
-  // 1) Base from stats block (may be partial)
+  // Stats from node
   const base = extractStatsFromStatsBlocks(playerNode);
-  let goals  = Number.isFinite(base.goals) ? base.goals : null;
-  let pg     = Number.isFinite(base.penalty_goals) ? base.penalty_goals : null;
-  let ast    = Number.isFinite(base.assists) ? base.assists : 0;
-  let yc     = Number.isFinite(base.yellow_cards) ? base.yellow_cards : null;
-  let rc     = Number.isFinite(base.red_cards) ? base.red_cards : null;
-  let mins   = Number.isFinite(base.minutes_played) ? base.minutes_played : null;
-  let rating = Number.isFinite(base.rating) ? base.rating : null;
-
-  // 2) Events (most reliable)
-  const evAgg = extractFromEvents(next, playerId, playerName);
-  if(!Number.isFinite(goals)) goals = evAgg.goals;
-  if(!Number.isFinite(pg))    pg    = evAgg.penalty_goals;
-  if(!Number.isFinite(yc))    yc    = evAgg.yellow_cards;
-  if(!Number.isFinite(rc))    rc    = evAgg.red_cards;
-  if(!Number.isFinite(base.assists) && Number.isFinite(evAgg.assists)) ast = evAgg.assists;
-
-  // 3) Shotmap fallback if still null
-  if(!Number.isFinite(goals) || !Number.isFinite(pg)){
-    const sm = extractFromShotmap(next, playerId, playerName);
-    if(!Number.isFinite(goals)) goals = sm.goals;
-    if(!Number.isFinite(pg))    pg    = sm.penalty_goals;
-  }
-
-  // 4) Cards fallback from match facts/bookings
-  const facts = extractCardsFromFacts(next, playerId, playerName);
-  yc = clampInt(Math.max(yc ?? 0, facts.yellow ?? 0));
-  rc = clampInt(Math.max(rc ?? 0, facts.red ?? 0));
-
-  // sanitize
-  goals = clampInt(goals ?? 0);
-  pg    = clampInt(pg ?? 0);
-  ast   = clampInt(ast ?? 0);
-  mins  = clampInt(mins ?? 0);
+  let goals  = clampInt(base.goals ?? 0);
+  let pg     = clampInt(base.penalty_goals ?? 0);
+  let ast    = clampInt(base.assists ?? 0);
+  let yc     = Number.isFinite(base.yellow_cards) ? clampInt(base.yellow_cards) : 0;
+  let rc     = Number.isFinite(base.red_cards) ? clampInt(base.red_cards) : 0;
+  let mins   = clampInt(base.minutes_played ?? 0);
+  const rating = (base.rating!=null ? Number(base.rating) : null);
   const fmp = mins >= 90;
 
-  // POTM flag for the target player
   const pid = asNum(playerId);
   const player_is_pom =
     !!potm && ((pid && potm.id && pid === potm.id) || (!pid && potm.name && normName(potm.name) === normName(playerName||'')));
@@ -439,10 +336,10 @@ function buildResult(payload){
     league_id,
     league_label: league_name,
     match_datetime_utc: iso,
-    league_allowed: allowed,
-    within_season_2025_26: within,
+    league_allowed: league_id!=null && TOP5_LEAGUE_IDS.has(league_id),
+    within_season_2025_26: !!iso && inSeason(iso),
     player_is_pom,
-    player_rating: rating!=null ? Number(rating) : null,
+    player_rating: rating,
     potm_name: potm?.name ? { fullName: potm.name } : null,
     potm_id: potm?.id ?? null,
 
@@ -454,18 +351,19 @@ function buildResult(payload){
     fixture_key,
 
     player_stats: {
-      goals,
-      penalty_goals: pg,
+      goals,              // total
+      penalty_goals: pg,  // PG
       assists: ast,
       yellow_cards: yc,
       red_cards: rc,
       full_match_played: !!fmp
     },
     echo_player_name: (playerNode?.name?.fullName || playerName || null),
-    source: "next_html"
+    source: "fotmob_html"
   };
 }
 
+// ======= MAIN HANDLER =======
 export async function handler(event){
   try{
     if(event.httpMethod!=="POST"){
@@ -479,7 +377,8 @@ export async function handler(event){
     const playerName = String(body.playerName||"").trim();
     if(!/\/match\/\d+/.test(matchUrl)) return resp(200,{ error:"Provide matchUrl like https://www.fotmob.com/match/123456" });
 
-    const { html } = await fetchText(matchUrl);
+    // 1) Fetch FotMob HTML + __NEXT_DATA__
+    const { text: html } = await fetchText(matchUrl, FOTMOB_HDRS);
     const s = nextDataStr(html);
     if(!s) return resp(200, { error:"NEXT_DATA not found" });
     const next = safeJSON(s);
@@ -489,7 +388,42 @@ export async function handler(event){
     const potm = extractPOTM(next) || null;
     const node = (playerId || playerName) ? findPlayerNode(next, playerId||null, playerName||null) : null;
 
-    const out = buildResult({ matchUrl, general, potm, playerNode: node, playerId, playerName, next });
+    // 2) Build baseline result from FotMob (keeps your POTM/FMP/assists, etc.)
+    const out = buildFotmobOnly({ matchUrl, general, potm, playerNode: node, playerId, playerName, next });
+
+    // 3) Only for valid domestic 2025-26 matches, try to augment PG + YC/RC using SofaScore incidents
+    if (USE_SOFASCORE && out.league_allowed && out.within_season_2025_26 && out.match_datetime_utc && out.home_team_name && out.away_team_name) {
+      try{
+        const sofaId = await findSofaEventId({
+          homeName: out.home_team_name,
+          awayName: out.away_team_name,
+          iso: out.match_datetime_utc
+        });
+
+        if(sofaId){
+          const agg = await sofaIncidentsToCounts(sofaId, out.echo_player_name || playerName);
+          // Merge: only override when SofaScore is non-zero OR FotMob value is zero.
+          if(agg.pg > 0 || out.player_stats.penalty_goals === 0){
+            out.player_stats.penalty_goals = clampInt(agg.pg);
+          }
+          // For completeness, if SofaScore total goals differs and FotMob has 0, adopt SofaScore goals
+          if((agg.goals > 0 && out.player_stats.goals === 0) || agg.goals >= out.player_stats.goals){
+            out.player_stats.goals = clampInt(agg.goals);
+          }
+          if(agg.yc > 0 || out.player_stats.yellow_cards === 0){
+            out.player_stats.yellow_cards = clampInt(agg.yc);
+          }
+          if(agg.rc > 0 || out.player_stats.red_cards === 0){
+            out.player_stats.red_cards = clampInt(agg.rc);
+          }
+          out.source = (out.source || "") + "+sofa_incidents";
+        }
+      }catch(e){
+        // Soft failure: keep FotMob numbers
+        out.sofa_error = String(e).slice(0,180);
+      }
+    }
+
     return resp(200, out);
 
   }catch(e){
