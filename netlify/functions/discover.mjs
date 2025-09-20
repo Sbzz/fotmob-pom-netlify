@@ -1,9 +1,11 @@
 // netlify/functions/discover.mjs
-// Robust discovery of 2025–26 Top-5 domestic league match URLs for player profile URLs.
+// Robust discovery of 2025–26 Top-5 domestic league match URLs for player profile URLs,
+// filtered to matches that have ALREADY KICKED OFF (<= now) to avoid huge lists early in the season.
 
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1));                // 2025-07-01
-const SEASON_END   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59));   // 2026-06-30 23:59:59
+const SEASON_END   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59));   // 2026-06-30
+const NOW          = new Date();                                    // keep only matches <= NOW
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36";
 const HDRS_HTML = {
@@ -26,10 +28,10 @@ function toISO(v){
   const d = new Date(v);
   return isNaN(d) ? null : d.toISOString();
 }
-function inSeason(iso){
+function inSeasonPast(iso){
   if(!iso) return false;
   const d = new Date(iso);
-  return d >= SEASON_START && d <= SEASON_END;
+  return d >= SEASON_START && d <= SEASON_END && d <= NOW;
 }
 
 async function fetchText(url, retry=2){
@@ -64,7 +66,6 @@ function* walk(root){
     }
   }
 }
-
 function unique(arr){ return Array.from(new Set(arr)); }
 
 function parsePlayerIdFromUrl(url){
@@ -76,12 +77,12 @@ function parsePlayerIdFromUrl(url){
 }
 
 function discoverMatchesFromNextData(root){
-  // Traverse any array that looks like a matches/fixtures list and pull matchId, leagueId, kickoff
+  // Traverse arrays that look like match/fixture lists and pull (matchId, leagueId, kickoff ISO).
   const matches = [];
   let playerId = null, playerName = null, teamId = null, teamSlug = null;
 
   for (const node of walk(root)){
-    // attempt to learn player/team
+    // learn player/team
     if (playerId == null && (node?.playerId != null || node?.id != null) && (node?.fullName || node?.name)) {
       playerId = asNum(node?.playerId ?? node?.id) ?? playerId;
       playerName = (node?.fullName || node?.name || playerName || null);
@@ -104,7 +105,6 @@ function discoverMatchesFromNextData(root){
         const mid = asNum(it?.matchId ?? it?.id);
         if (!mid) continue;
         const lid = asNum(it?.leagueId ?? it?.tournamentId ?? it?.competitionId);
-        // gather any possible kickoff timestamp/iso
         const iso = toISO(
           it?.matchTimeUTC || it?.startTimeUTC || it?.utcStart || it?.dateUTC ||
           it?.date || it?.startDate || it?.kickoffISO || it?.time
@@ -116,15 +116,19 @@ function discoverMatchesFromNextData(root){
   return { matches, playerId, playerName, teamId, teamSlug };
 }
 
-function filterTop5Season(list){
+// STRICT filter: must have leagueId in Top-5 AND a valid kickoff within the 2025–26 window AND <= now.
+function filterTop5SeasonPast(list){
   const out = [];
   for (const m of list){
-    if (m.leagueId != null && !TOP5_LEAGUE_IDS.has(Number(m.leagueId))) continue;
-    if (m.iso && !inSeason(m.iso)) continue; // if date known and outside season, drop
+    const lid = Number(m.leagueId);
+    if (!Number.isFinite(lid) || !TOP5_LEAGUE_IDS.has(lid)) continue;
+    if (!m.iso) continue;           // require a real kickoff timestamp
+    if (!inSeasonPast(m.iso)) continue;
     out.push(m);
   }
   return out;
 }
+
 function buildMatchUrls(listOrIds){
   const ids = Array.isArray(listOrIds)
     ? unique(listOrIds.map(x => typeof x === "string" || typeof x === "number" ? String(x) : String(x.matchId)))
@@ -146,7 +150,7 @@ async function discoverForPlayerUrl(playerUrl){
     used: [],
     player_page: { next_matches: 0, kept: 0, errors: [] },
     team_pages:  { attempts: 0, next_matches: 0, kept: 0, errors: [] },
-    anchors:     { found: 0 },
+    anchors:     { found: 0, kept: 0 },
   };
 
   let player_id = parsePlayerIdFromUrl(playerUrl);
@@ -167,17 +171,16 @@ async function discoverForPlayerUrl(playerUrl){
     debug.used.push("player_next");
     debug.player_page.next_matches += found.matches.length;
 
-    const kept = filterTop5Season(found.matches);
+    const kept = filterTop5SeasonPast(found.matches);
     debug.player_page.kept += kept.length;
     matches = matches.concat(kept);
 
-    // raw anchors as last resort
-    if (!kept.length){
-      const ids = Array.from(html.matchAll(/\/match\/(\d{5,10})/g)).map(m=>m[1]);
-      debug.anchors.found = ids.length;
-      if (ids.length) debug.used.push("player_anchors");
-      matches = matches.concat(ids.map(id => ({ matchId: Number(id), leagueId: null, iso: null })));
-    }
+    // raw anchors -> keep only if we can later enrich dates (we can't here), so we drop them by default.
+    // (We still record how many anchors existed for debugging.)
+    const ids = Array.from(html.matchAll(/\/match\/(\d{5,10})/g)).map(m=>m[1]);
+    debug.anchors.found = ids.length;
+    // We do not use anchors now because they lack reliable league/date metadata
+    // and previously caused over-collection.
   }catch(e){
     debug.player_page.errors.push(String(e));
   }
@@ -187,7 +190,6 @@ async function discoverForPlayerUrl(playerUrl){
     const tryUrls = [];
     const base = `https://www.fotmob.com/teams/${team_id}`;
     const slug = team_slug ? `/${team_slug}` : "";
-    // Try fixtures, matches, overview variants (some locales/templates differ)
     tryUrls.push(`${base}/fixtures${slug}`);
     tryUrls.push(`${base}/matches${slug}`);
     tryUrls.push(`${base}/overview${slug}`);
@@ -201,7 +203,7 @@ async function discoverForPlayerUrl(playerUrl){
         debug.used.push("team_next");
         debug.team_pages.next_matches += found.matches.length;
 
-        const kept = filterTop5Season(found.matches);
+        const kept = filterTop5SeasonPast(found.matches);
         debug.team_pages.kept += kept.length;
         matches = matches.concat(kept);
       }catch(e){
@@ -210,7 +212,7 @@ async function discoverForPlayerUrl(playerUrl){
     }
   }
 
-  // Deduplicate → URLs
+  // Deduplicate -> URLs
   const urlList = buildMatchUrls(matches);
 
   return {
