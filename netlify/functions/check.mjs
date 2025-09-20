@@ -1,7 +1,9 @@
 // netlify/functions/check.mjs
-// Check one match URL for a given player (POTM + key stats) and emit a stable fixture fingerprint
+// Check one match URL for a given player (POTM + key stats) and emit a stable fixture fingerprint.
+// Fixes: accurate NPG/PG (multi-source), YC/RC from events, robust minutes played fallback.
+//
 // Input (POST JSON): { matchUrl, playerId?, playerName? }
-// Output: fields used by index.html (incl. fixture_key for de-dup)
+// Output fields used by index.html (incl. fixture_key for de-dup)
 
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1));                // 2025-07-01
@@ -137,22 +139,32 @@ function extractPOTM(root){
 
 function findPlayerNode(root, playerId, playerName){
   const targetName = normName(playerName||'');
-  let exactById=null, bestByName=null;
+  let exactById=null, bestByName=null, withMinutes=null;
   for(const node of walk(root)){
     const id = asNum(node?.id ?? node?.playerId);
     const full = node?.name?.fullName || node?.name || null;
+
+    if(node?.minutesPlayed!=null && (id===playerId || (full && normName(full)===targetName))){
+      withMinutes = withMinutes || node;
+    }
+
     const hasStats = Array.isArray(node?.stats) && node.stats.length>0;
     if(!hasStats) continue;
     if(playerId && id === playerId) return node;
     if(!bestByName && full && targetName && normName(full) === targetName) bestByName = node;
     if(!exactById && id && playerId && id === playerId) exactById = node;
   }
-  return exactById || bestByName || null;
+  return exactById || bestByName || withMinutes || null;
 }
 
 function extractStatsFromStatsBlocks(node){
-  const acc = { goals:0, penalty_goals:0, assists:0, yellow_cards:0, red_cards:0, minutes_played:0, rating:null };
-  if(!node || !Array.isArray(node.stats)) return acc;
+  const acc = { goals:null, penalty_goals:null, assists:null, yellow_cards:null, red_cards:null, minutes_played:null, rating:null };
+  if(!node) return acc;
+  // direct fields first
+  if(Number.isFinite(Number(node.minutesPlayed))) acc.minutes_played = Number(node.minutesPlayed);
+  if(node?.rating?.num!=null && Number.isFinite(Number(node.rating.num))) acc.rating = Number(node.rating.num);
+
+  if(!Array.isArray(node.stats)) return acc;
 
   const pick = (labels) => {
     for(const lab of labels){
@@ -168,10 +180,10 @@ function extractStatsFromStatsBlocks(node){
   const rating = pick(["FotMob rating","Rating","Match rating"]);
   const mins   = pick(["Minutes played","Minutes","Time played"]);
   const goals  = pick(["Goals","Total goals"]);
-  const pg     = pick(["Penalty goals","Penalties scored","Scored penalties","Penalty Goals"]);
+  const pg     = pick(["Penalty goals","Penalties scored","Scored penalties","Penalty Goals","Penalty Goals Scored"]);
   const ast    = pick(["Assists","Total assists"]);
-  const yc     = pick(["Yellow cards","Yellow Cards","YC"]);
-  const rc     = pick(["Red cards","Red Cards","RC"]);
+  const yc     = pick(["Yellow cards","Yellow Cards","YC","Yellow Card"]);
+  const rc     = pick(["Red cards","Red Cards","RC","Red Card"]);
 
   if(Number.isFinite(rating)) acc.rating = rating;
   if(Number.isFinite(mins))   acc.minutes_played = mins;
@@ -184,18 +196,151 @@ function extractStatsFromStatsBlocks(node){
   return acc;
 }
 
+// ---- NEW: derive stats from EVENTS (robust across templates) ----
+function extractFromEvents(root, playerId, playerName){
+  const acc = { goals:0, penalty_goals:0, assists:0, yellow_cards:0, red_cards:0 };
+  const tName = normName(playerName||'');
+
+  const matchId = (ev) => {
+    const pid = asNum(ev?.player?.id ?? ev?.playerId ?? ev?.actor?.id ?? ev?.participant?.id);
+    const nm  = ev?.player?.name?.fullName || ev?.playerName || ev?.player || ev?.actor?.name || ev?.name || null;
+    if(playerId && pid === playerId) return true;
+    if(!playerId && nm && normName(nm)===tName) return true;
+    return false;
+  };
+
+  const assistMatch = (ev) => {
+    const aid = asNum(ev?.assist?.id ?? ev?.assistId ?? ev?.assisterId ?? ev?.assistPlayerId);
+    const anm = ev?.assist?.name?.fullName || ev?.assistName || ev?.assisterName || null;
+    if(playerId && aid === playerId) return true;
+    if(!playerId && anm && normName(anm)===tName) return true;
+    return false;
+  };
+
+  const isGoalEvent = (ev) => {
+    const t = String(ev?.type ?? ev?.eventType ?? ev?.key ?? ev?.kind ?? ev?.code ?? '').toLowerCase();
+    const detail = String(ev?.detail ?? ev?.subType ?? ev?.scoringType ?? ev?.goalType ?? '').toLowerCase();
+    const res = String(ev?.result ?? '').toLowerCase();
+    return t.includes('goal') || res==='goal' || detail.includes('goal') || ev?.isGoal === true;
+  };
+  const isPenaltyGoal = (ev) => {
+    const t = String(ev?.type ?? ev?.eventType ?? ev?.key ?? '').toLowerCase();
+    const detail = String(ev?.detail ?? ev?.subType ?? ev?.scoringType ?? ev?.goalType ?? '').toLowerCase();
+    return /pen/.test(t) || /pen/.test(detail) || ev?.isPenalty === true;
+  };
+  const isYellow = (ev) => {
+    const t = String(ev?.type ?? ev?.eventType ?? ev?.key ?? ev?.card ?? '').toLowerCase();
+    const detail = String(ev?.detail ?? ev?.subType ?? '').toLowerCase();
+    return t.includes('yellow') || detail.includes('yellow') || ev?.card === 'yellow';
+  };
+  const isRed = (ev) => {
+    const t = String(ev?.type ?? ev?.eventType ?? ev?.key ?? ev?.card ?? '').toLowerCase();
+    const detail = String(ev?.detail ?? ev?.subType ?? '').toLowerCase();
+    return t.includes('red') || detail.includes('red') || ev?.card === 'red';
+  };
+
+  const arrays = new Set();
+
+  for(const node of walk(root)){
+    for (const key of Object.keys(node||{})){
+      const val = node[key];
+      if(Array.isArray(val) && val.length && !arrays.has(val)){
+        arrays.add(val);
+      }
+    }
+  }
+
+  for(const arr of arrays){
+    for(const ev of arr){
+      if(!ev || typeof ev!=='object') continue;
+
+      // Goals
+      if(isGoalEvent(ev) && matchId(ev)){
+        acc.goals += 1;
+        if(isPenaltyGoal(ev)) acc.penalty_goals += 1;
+      }
+      // Assists (credited on the scoring event)
+      if(isGoalEvent(ev) && assistMatch(ev)){
+        acc.assists += 1;
+      }
+      // Cards
+      if(matchId(ev)){
+        if(isYellow(ev)) acc.yellow_cards += 1;
+        if(isRed(ev))    acc.red_cards += 1;
+      }
+    }
+  }
+
+  return acc;
+}
+
+// ---- Fallback: derive from SHOTMAP for penalties/goals when events missing ----
+function extractFromShotmap(root, playerId, playerName){
+  const acc = { goals:0, penalty_goals:0 };
+  const tName = normName(playerName||'');
+
+  for(const node of walk(root)){
+    const id   = asNum(node?.id ?? node?.playerId);
+    const name = node?.name?.fullName || node?.name || null;
+
+    if(!Array.isArray(node?.shotmap)) continue;
+    const isMe = (playerId && id===playerId) || (!playerId && name && normName(name)===tName);
+    if(!isMe) continue;
+
+    for(const sh of node.shotmap){
+      if(!sh || typeof sh!=='object') continue;
+      const goal = sh.isGoal === true || String(sh?.result||'').toLowerCase()==='goal';
+      const pen  = sh.isPenalty === true || String(sh?.situation||'').toLowerCase().includes('pen');
+      if(goal){ acc.goals += 1; if(pen) acc.penalty_goals += 1; }
+    }
+  }
+  return acc;
+}
+
 function buildResult(payload){
-  const { matchUrl, general, potm, playerNode, playerId, playerName } = payload;
+  const { matchUrl, general, potm, playerNode, playerId, playerName, next } = payload;
   const league_id   = asNum(general.leagueId);
   const league_name = general.leagueName || null;
   const iso         = general.iso || null;
   const allowed     = league_id!=null && TOP5_LEAGUE_IDS.has(league_id);
   const within      = !!iso && inSeason(iso) && (new Date(iso) <= NOW);
 
-  let stats = { goals:0, penalty_goals:0, assists:0, yellow_cards:0, red_cards:0, minutes_played:0, rating:null };
-  if(playerNode){ stats = extractStatsFromStatsBlocks(playerNode); }
-  const fmp = stats.minutes_played >= 90;
+  // 1) Base from stats block (may be partial)
+  const base = extractStatsFromStatsBlocks(playerNode);
+  let goals  = Number.isFinite(base.goals) ? base.goals : null;
+  let pg     = Number.isFinite(base.penalty_goals) ? base.penalty_goals : null;
+  let ast    = Number.isFinite(base.assists) ? base.assists : 0;
+  let yc     = Number.isFinite(base.yellow_cards) ? base.yellow_cards : null;
+  let rc     = Number.isFinite(base.red_cards) ? base.red_cards : null;
+  let mins   = Number.isFinite(base.minutes_played) ? base.minutes_played : null;
+  let rating = Number.isFinite(base.rating) ? base.rating : null;
 
+  // 2) Events (most reliable for PG/YC/RC)
+  const evAgg = extractFromEvents(next, playerId, playerName);
+  if(!Number.isFinite(goals)) goals = evAgg.goals;
+  if(!Number.isFinite(pg))    pg    = evAgg.penalty_goals;
+  if(!Number.isFinite(yc))    yc    = evAgg.yellow_cards;
+  if(!Number.isFinite(rc))    rc    = evAgg.red_cards;
+  // assists: if stats missing but events found, keep events
+  if(!Number.isFinite(base.assists) && Number.isFinite(evAgg.assists)) ast = evAgg.assists;
+
+  // 3) Shotmap fallback for goals/penalties if still null
+  if(!Number.isFinite(goals) || !Number.isFinite(pg)){
+    const sm = extractFromShotmap(next, playerId, playerName);
+    if(!Number.isFinite(goals)) goals = sm.goals;
+    if(!Number.isFinite(pg))    pg    = sm.penalty_goals;
+  }
+
+  // sanitize
+  goals = clampInt(goals ?? 0);
+  pg    = clampInt(pg ?? 0);
+  ast   = clampInt(ast ?? 0);
+  yc    = clampInt(yc ?? 0);
+  rc    = clampInt(rc ?? 0);
+  mins  = clampInt(mins ?? 0);
+  const fmp = mins >= 90;
+
+  // POTM flag for the target player
   const pid = asNum(playerId);
   const player_is_pom =
     !!potm && ((pid && potm.id && pid === potm.id) || (!pid && potm.name && normName(potm.name) === normName(playerName||'')));
@@ -216,11 +361,11 @@ function buildResult(payload){
     league_allowed: allowed,
     within_season_2025_26: within,
     player_is_pom,
-    player_rating: stats.rating!=null ? Number(stats.rating) : null,
+    player_rating: rating!=null ? Number(rating) : null,
     potm_name: potm?.name ? { fullName: potm.name } : null,
     potm_id: potm?.id ?? null,
 
-    // NEW: team identity for de-dupe
+    // team identity for de-dupe
     home_team_id: general.hId ?? null,
     home_team_name: general.hName ?? null,
     away_team_id: general.aId ?? null,
@@ -228,11 +373,11 @@ function buildResult(payload){
     fixture_key,
 
     player_stats: {
-      goals: clampInt(stats.goals),
-      penalty_goals: clampInt(stats.penalty_goals),
-      assists: clampInt(stats.assists),
-      yellow_cards: clampInt(stats.yellow_cards),
-      red_cards: clampInt(stats.red_cards),
+      goals,
+      penalty_goals: pg,
+      assists: ast,
+      yellow_cards: yc,
+      red_cards: rc,
       full_match_played: !!fmp
     },
     echo_player_name: (playerNode?.name?.fullName || playerName || null),
@@ -261,13 +406,9 @@ export async function handler(event){
 
     const general = extractGeneral(next);
     const potm = extractPOTM(next) || null;
+    const node = (playerId || playerName) ? findPlayerNode(next, playerId||null, playerName||null) : null;
 
-    let node = null;
-    if(playerId || playerName){
-      node = findPlayerNode(next, playerId||null, playerName||null);
-    }
-
-    const out = buildResult({ matchUrl, general, potm, playerNode: node, playerId, playerName });
+    const out = buildResult({ matchUrl, general, potm, playerNode: node, playerId, playerName, next });
     return resp(200, out);
 
   }catch(e){
