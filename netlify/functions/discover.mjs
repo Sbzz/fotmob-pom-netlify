@@ -1,11 +1,7 @@
 // netlify/functions/discover.mjs
 // Discover 2025–26 Top-5 domestic league matches for FotMob player URLs.
-// Strategy:
-// 1) Parse player __NEXT_DATA__ → collect (matchId, leagueId, kickoff).
-// 2) Parse team fixtures/matches pages __NEXT_DATA__ → collect more.
-// 3) If few/none, scrape /match/<id> anchors from BOTH pages and ENRICH each
-//    via /api/matchDetails to get leagueId + kickoff and filter properly.
-// Keeps only Top-5 domestic, within season window, and already kicked off.
+// Now enriches match IDs collected from __NEXT_DATA__ via /api/matchDetails,
+// so we keep only valid, already-played league fixtures even when NEXT lacks league/time.
 
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1));                // 2025-07-01
@@ -28,7 +24,8 @@ const HDRS_JSON = {
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const asNum = (v) => Number.isFinite(Number(v)) ? Number(v) : null;
-const resp = (code, obj) => ({ statusCode: code, headers:{ "content-type":"application/json" }, body: JSON.stringify(obj) });
+const resp  = (code, obj) => ({ statusCode: code, headers:{ "content-type":"application/json" }, body: JSON.stringify(obj) });
+const unique = (arr) => Array.from(new Set(arr));
 
 function toISO(v){
   if (!v) return null;
@@ -91,7 +88,6 @@ function* walk(root){
     }
   }
 }
-function unique(arr){ return Array.from(new Set(arr)); }
 
 function parsePlayerIdFromUrl(url){
   try{
@@ -104,9 +100,19 @@ function collectAnchorIds(html){
   return unique(Array.from(html.matchAll(/\/match\/(\d{5,10})/g)).map(m=>m[1]));
 }
 
-function discoverMatchesFromNextData(root){
+// --- harvest from NEXT_DATA with broader field coverage ---
+function collectMatchesFromNext(root){
   const matches = [];
   let playerId = null, playerName = null, teamId = null, teamSlug = null;
+
+  const leagueIdFrom = (it) =>
+    asNum(it?.leagueId ?? it?.tournamentId ?? it?.competitionId
+      ?? it?.league?.id ?? it?.tournament?.id ?? it?.competition?.id);
+
+  const isoFrom = (it) =>
+    toISO(it?.matchTimeUTC ?? it?.startTimeUTC ?? it?.utcStart ?? it?.dateUTC
+      ?? it?.date ?? it?.startDate ?? it?.kickoffISO
+      ?? it?.time ?? it?.status?.utcTime ?? it?.kickoff?.utc);
 
   for (const node of walk(root)){
     if (playerId == null && (node?.playerId != null || node?.id != null) && (node?.fullName || node?.name)) {
@@ -130,12 +136,14 @@ function discoverMatchesFromNextData(root){
         if (!it || typeof it !== "object") continue;
         const mid = asNum(it?.matchId ?? it?.id);
         if (!mid) continue;
-        const lid = asNum(it?.leagueId ?? it?.tournamentId ?? it?.competitionId);
-        const iso = toISO(
-          it?.matchTimeUTC || it?.startTimeUTC || it?.utcStart || it?.dateUTC ||
-          it?.date || it?.startDate || it?.kickoffISO || it?.time
-        );
-        matches.push({ matchId: mid, leagueId: lid ?? null, iso });
+        const lid = leagueIdFrom(it) ?? null;
+        const iso = isoFrom(it) ?? null;
+
+        // also try to capture home/away ids (for later team filtering if we enrich)
+        const homeId = asNum(it?.homeTeamId ?? it?.home?.id ?? it?.homeTeam?.id ?? it?.teams?.home?.id);
+        const awayId = asNum(it?.awayTeamId ?? it?.away?.id ?? it?.awayTeam?.id ?? it?.teams?.away?.id);
+
+        matches.push({ matchId: mid, leagueId: lid, iso, homeId, awayId });
       }
     }
   }
@@ -153,7 +161,6 @@ function filterTop5SeasonPast(list){
   }
   return out;
 }
-
 function buildMatchUrls(listOrIds){
   const ids = Array.isArray(listOrIds)
     ? [...new Set(listOrIds.map(x => typeof x === "string" || typeof x === "number" ? String(x) : String(x.matchId)))]
@@ -170,48 +177,45 @@ async function getNextData(url){
   return { next: obj, html, finalUrl };
 }
 
-async function enrichAnchorIds(ids, teamId){
-  // Probe a reasonable window to avoid rate limits
-  const MAX_PROBE = 96;
-  const toProbe = [...new Set(ids)].slice(0, MAX_PROBE);
-  const CONC = 2;             // gentle concurrency to avoid 401s
+// --- enrichment via matchDetails for IDs lacking metadata ---
+async function enrichIdsViaApi(ids, teamId, debugTag){
+  const MAX = 96;           // polite probing window
+  const CONC = 2;           // low concurrency avoids 401s
+  const queue = [...new Set(ids)].slice(0, MAX);
   const out = [];
-  const q = [...toProbe];
-
-  const work = async (mid) => {
+  const errs = [];
+  const run = async (mid) => {
     try{
       const j = await fetchJSON(`https://www.fotmob.com/api/matchDetails?matchId=${mid}`);
-      let leagueId = null, iso = null, hId = null, aId = null;
-      leagueId = asNum(j?.general?.leagueId ?? j?.leagueId ?? j?.tournamentId ?? j?.competitionId);
+      let leagueId = asNum(j?.general?.leagueId ?? j?.leagueId ?? j?.tournamentId ?? j?.competitionId);
       const ts = j?.general?.matchTimeUTC || j?.general?.startTimeUTC || j?.matchTimeUTC || j?.startTimeUTC;
-      iso = toISO(ts);
-      hId = asNum(j?.general?.homeTeam?.id ?? j?.homeTeam?.id);
-      aId = asNum(j?.general?.awayTeam?.id ?? j?.awayTeam?.id);
+      const iso = toISO(ts);
+      const hId = asNum(j?.general?.homeTeam?.id ?? j?.homeTeam?.id);
+      const aId = asNum(j?.general?.awayTeam?.id ?? j?.awayTeam?.id);
 
       if (!Number.isFinite(leagueId) || !TOP5_LEAGUE_IDS.has(leagueId)) return;
       if (!iso || !inSeasonPast(iso)) return;
       if (Number.isFinite(teamId) && !(hId===teamId || aId===teamId)) return;
 
       out.push({ matchId: Number(mid), leagueId, iso });
-    }catch(_e){ /* ignore */ }
+    }catch(e){ errs.push(`${mid}: ${String(e).slice(0,120)}`); }
   };
-
-  const runners = new Array(CONC).fill(0).map(async ()=> {
-    while(q.length){
-      const id = q.shift();
-      await work(id);
-      await sleep(180); // spacing to be polite
+  const workers = new Array(CONC).fill(0).map(async ()=>{
+    while(queue.length){
+      const id = queue.shift();
+      await run(id);
+      await sleep(180);
     }
   });
-  await Promise.all(runners);
-  return out;
+  await Promise.all(workers);
+  return { enriched: out, errors: errs, probed: Math.min(MAX, ids.length) };
 }
 
 async function discoverForPlayerUrl(playerUrl){
   const debug = {
     used: [],
-    player_page: { next_matches: 0, kept: 0, errors: [], anchors_found: 0, anchors_kept: 0, anchors_probed: 0 },
-    team_pages:  { attempts: 0, next_matches: 0, kept: 0, errors: [], anchors_found: 0, anchors_kept: 0, anchors_probed: 0 },
+    player_page: { next_matches: 0, kept: 0, errors: [], anchors_found: 0, enrich_probed: 0, enrich_kept: 0, enrich_errors: 0 },
+    team_pages:  { attempts: 0, next_matches: 0, kept: 0, errors: [], anchors_found: 0, enrich_probed: 0, enrich_kept: 0, enrich_errors: 0 },
   };
 
   let player_id = parsePlayerIdFromUrl(playerUrl);
@@ -222,10 +226,12 @@ async function discoverForPlayerUrl(playerUrl){
 
   // 1) Player page
   let playerHtml = "";
+  let playerNextIds = [];
   try{
     const { next, html } = await getNextData(playerUrl);
     playerHtml = html;
-    const found = discoverMatchesFromNextData(next);
+
+    const found = collectMatchesFromNext(next);
     if (found.playerId) player_id = player_id ?? found.playerId;
     if (found.playerName) player_name = found.playerName;
     team_id  = team_id  ?? found.teamId;
@@ -234,28 +240,32 @@ async function discoverForPlayerUrl(playerUrl){
     debug.used.push("player_next");
     debug.player_page.next_matches += found.matches.length;
 
+    // keep any that already pass the strict filter
     const kept = filterTop5SeasonPast(found.matches);
     debug.player_page.kept += kept.length;
     matches = matches.concat(kept);
 
-    // collect anchors for enrichment fallback
-    const ids = collectAnchorIds(playerHtml);
-    debug.player_page.anchors_found = ids.length;
+    // stage IDs for enrichment if we kept nothing/few
+    playerNextIds = unique(found.matches.map(m => String(m.matchId))).filter(Boolean);
 
-    // Enrich if still none/few
-    if (matches.length === 0 && ids.length){
-      const enriched = await enrichAnchorIds(ids, team_id ?? null);
-      debug.used.push("player_anchors_enriched");
-      debug.player_page.anchors_probed = Math.min(96, ids.length);
-      debug.player_page.anchors_kept = enriched.length;
-      matches = matches.concat(enriched);
+    // anchors (record only; not used directly here)
+    const anchors = collectAnchorIds(playerHtml);
+    debug.player_page.anchors_found = anchors.length;
+
+    if (matches.length === 0 && playerNextIds.length){
+      const enr = await enrichIdsViaApi(playerNextIds, team_id ?? null, "player_next");
+      debug.used.push("player_next_enriched");
+      debug.player_page.enrich_probed  = enr.probed;
+      debug.player_page.enrich_kept    = enr.enriched.length;
+      debug.player_page.enrich_errors  = enr.errors.length;
+      matches = matches.concat(enr.enriched);
     }
   }catch(e){
     debug.player_page.errors.push(String(e));
   }
 
-  // 2) Team fixtures/matches pages (adds more dated matches + anchors)
-  let teamAnchors = [];
+  // 2) Team fixtures/matches pages
+  let teamNextIds = [];
   if (team_id){
     const tryUrls = [];
     const base = `https://www.fotmob.com/teams/${team_id}`;
@@ -269,7 +279,8 @@ async function discoverForPlayerUrl(playerUrl){
       try{
         debug.team_pages.attempts += 1;
         const { next, html } = await getNextData(u);
-        const found = discoverMatchesFromNextData(next);
+        const found = collectMatchesFromNext(next);
+
         debug.used.push("team_next");
         debug.team_pages.next_matches += found.matches.length;
 
@@ -277,23 +288,21 @@ async function discoverForPlayerUrl(playerUrl){
         debug.team_pages.kept += kept.length;
         matches = matches.concat(kept);
 
-        // also gather anchors for enrichment if still empty
-        const ids = collectAnchorIds(html);
-        teamAnchors = teamAnchors.concat(ids);
+        teamNextIds = teamNextIds.concat(found.matches.map(m => String(m.matchId)));
+        debug.team_pages.anchors_found += collectAnchorIds(html).length;
       }catch(e){
         debug.team_pages.errors.push(`${u} :: ${String(e)}`);
       }
     }
 
-    // only enrich team anchors if we still have nothing
-    if (matches.length === 0 && teamAnchors.length){
-      teamAnchors = unique(teamAnchors);
-      debug.team_pages.anchors_found = teamAnchors.length;
-      const enriched = await enrichAnchorIds(teamAnchors, team_id);
-      debug.used.push("team_anchors_enriched");
-      debug.team_pages.anchors_probed = Math.min(96, teamAnchors.length);
-      debug.team_pages.anchors_kept = enriched.length;
-      matches = matches.concat(enriched);
+    if (matches.length === 0 && teamNextIds.length){
+      teamNextIds = unique(teamNextIds).filter(Boolean);
+      const enr = await enrichIdsViaApi(teamNextIds, team_id, "team_next");
+      debug.used.push("team_next_enriched");
+      debug.team_pages.enrich_probed  = enr.probed;
+      debug.team_pages.enrich_kept    = enr.enriched.length;
+      debug.team_pages.enrich_errors  = enr.errors.length;
+      matches = matches.concat(enr.enriched);
     }
   }
 
