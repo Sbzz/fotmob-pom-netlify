@@ -1,14 +1,13 @@
 // netlify/functions/check.mjs
-// Keep: discovery inputs, league/season filters, POTM, FMP, Assists, fixture_key, UI contract.
-// Fix: PG vs NPG (events/shotmap override stats=0), YC/RC (booking/card object variants + facts fallback).
-// No "??" operator (uses nz()) so bundling is happy.
+// Fixes PG/NPG and RC via event dedup + strict penalty detection + sane clamps.
+// Leaves discovery, POTM, FMP, assists, league/season filters, fixture key, and UI contract unchanged.
 
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1));                // 2025-07-01
 const SEASON_END   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59));   // 2026-06-30
 const NOW          = new Date();
 
-const nz = (v, dflt) => (v === null || v === undefined ? dflt : v);
+const nz = (v, d) => (v === null || v === undefined ? d : v);
 const asNum = (v) => Number.isFinite(Number(v)) ? Number(v) : null;
 const clampInt = (v) => Number.isFinite(v) ? Math.max(0, Math.trunc(v)) : 0;
 
@@ -191,21 +190,57 @@ function extractStatsFromStatsBlocks(node){
   return acc;
 }
 
-// ---------- EVENTS & FALLBACKS ----------
+// ---------- EVENTS & FALLBACKS (with dedup + sane clamps) ----------
 function extractFromEvents(root, playerId, playerName){
   const acc = { goals:0, penalty_goals:0, assists:0, yellow_cards:0, red_cards:0 };
   const tName = normName(playerName||'');
 
-  const matchByPlayer = (ev)=>{
-    const pid = asNum(
-      ev?.player?.id || ev?.playerId || ev?.actor?.id || ev?.participant?.id ||
-      ev?.subject?.id || ev?.player1Id || ev?.playerId1
+  const val = (x)=> (x===null || x===undefined) ? '' : String(x).toLowerCase();
+  const num = (x)=> (x===null || x===undefined) ? null : Number(x);
+
+  const minuteOf = (e)=>{
+    return num(e?.minute) ??
+           num(e?.time) ??
+           num(e?.clock?.minute) ??
+           num(e?.timeMin) ??
+           num(e?.min) ??
+           null;
+  };
+  const secondOf = (e)=>{
+    return num(e?.second) ??
+           num(e?.clock?.second) ??
+           num(e?.timeSec) ??
+           null;
+  };
+  const playerIdOf = (e)=>{
+    return asNum(
+      e?.player?.id || e?.playerId || e?.actor?.id || e?.participant?.id ||
+      e?.subject?.id || e?.player1Id || e?.playerId1
     );
-    const nm  = ev?.player?.name?.fullName || ev?.playerName || ev?.player || ev?.actor?.name || ev?.name || ev?.subject?.name || ev?.player1Name || null;
+  };
+  const playerNameOf = (e)=>{
+    return e?.player?.name?.fullName || e?.playerName || e?.player || e?.actor?.name || e?.name || e?.subject?.name || e?.player1Name || '';
+  };
+  const sideOf = (e)=>{
+    const t = e?.team || e?.teamId || e?.side || e?.isHomeTeam;
+    if(typeof t === 'boolean') return t ? 'home' : 'away';
+    return String(t||'');
+  };
+
+  const isShootout = (e)=>{
+    const s = [
+      e?.period, e?.phase, e?.stage, e?.description, e?.detail, e?.subType, e?.result
+    ].map(val).join('|');
+    return /shoot-?out|penalty shootout|penalties shootout/.test(s);
+  };
+
+  const matchByPlayer = (e)=>{
+    const pid = playerIdOf(e);
+    const nm  = playerNameOf(e);
     if(playerId && pid === playerId) return true;
     if(!playerId && nm && normName(nm)===tName) return true;
-    if(Array.isArray(ev?.players)){
-      for(const p of ev.players){
+    if(Array.isArray(e?.players)){
+      for(const p of e.players){
         const id = asNum(p?.id);
         const fn = p?.name?.fullName || p?.name;
         if(playerId && id===playerId) return true;
@@ -215,51 +250,33 @@ function extractFromEvents(root, playerId, playerName){
     return false;
   };
 
-  const assistMatch = (ev)=>{
-    const ids = [];
-    const names = [];
-    if (ev?.assist) { ids.push(asNum(ev.assist.id)); names.push(ev.assist?.name?.fullName || ev.assistName); }
-    if (ev?.assistId!=null) ids.push(asNum(ev.assistId));
-    if (ev?.assisterId!=null) ids.push(asNum(ev.assisterId));
-    if (ev?.assistPlayerId!=null) ids.push(asNum(ev.assistPlayerId));
-    if (ev?.secondaryPlayerId!=null) ids.push(asNum(ev.secondaryPlayerId));
-    if (Array.isArray(ev?.assists)) for(const a of ev.assists){ ids.push(asNum(a?.id)); names.push(a?.name?.fullName||a?.name); }
-    if (Array.isArray(ev?.assistPlayers)) for(const a of ev.assistPlayers){ ids.push(asNum(a?.id)); names.push(a?.name?.fullName||a?.name); }
-    if(playerId && ids.some(id => id===playerId)) return true;
-    if(!playerId) for(const nm of names){ if(nm && normName(nm)===tName) return true; }
-    return false;
-  };
-
-  const val = (x)=> (x===null || x===undefined) ? '' : String(x).toLowerCase();
   const isGoalEvent = (e) => {
-    const t = [e.type, e.eventType, e.incidentType, e.key, e.code, e.kind, e.result, e.action].map(val).join('|');
-    const d = [e.detail, e.subType, e.scoringType, e.goalType, e.outcome, e.description].map(val).join('|');
-    // include "penalty" goals that may not literally say "goal" in type
+    const t = [e?.type, e?.eventType, e?.incidentType, e?.key, e?.code, e?.kind, e?.result, e?.action].map(val).join('|');
+    const d = [e?.detail, e?.subType, e?.scoringType, e?.goalType, e?.outcome, e?.description].map(val).join('|');
     return t.includes('goal') || d.includes('goal') || t.includes('score') || t.includes('scored') ||
-           d.includes('scored') || (t.includes('penalty') && d.includes('scored')) || e?.isGoal===true;
+           d.includes('scored') || (t.includes('penalty') && d.includes('scored')) || e?.isGoal === true;
   };
   const isOwnGoal = (e) => {
-    const s = [e.detail, e.subType, e.scoringType, e.goalType, e.description, e.result].map(val).join('|');
+    const s = [e?.detail, e?.subType, e?.scoringType, e?.goalType, e?.description, e?.result].map(val).join('|');
     return s.includes('own') || s.includes('og') || e?.isOwnGoal === true;
   };
   const isPenaltyGoal = (e) => {
-    // catch broad variants: "penalty", "pen", "from penalty", "penalty kick", codes, shotType.name, situation
+    // only evaluated on confirmed goals; detects multiple penalty wordings
     const s = [
-      e.type, e.eventType, e.scoringType, e.goalType, e.detail, e.subType, e.situation, e.description,
-      e?.shotType?.name, e?.code, e?.result
+      e?.type, e?.eventType, e?.scoringType, e?.goalType, e?.detail, e?.subType, e?.situation, e?.description,
+      e?.shotType && e.shotType.name, e?.code, e?.result
     ].map(val).join('|');
-    return s.includes('penalty') || s.includes('pen ') || s.includes(' pen') || s.includes('pen_') ||
+    return s.includes('penalty') || s.includes(' pen') || s.includes('pen ') || s.includes('pen_') ||
            s.includes('from penalty') || s.includes('penalty kick') || s.includes('penaltykick') ||
            s.includes('penaltyscored') || e?.isPenalty === true || e?.penalty === true;
   };
 
   const isYellow = (e) => {
-    // handle booking objects like { card: { color: "yellow" } }
     const cardObj = e?.card || e?.booking || e?.bookingCard || null;
     const cardColor = cardObj && (cardObj.color || cardObj.type || cardObj.name) ? String(cardObj.color || cardObj.type || cardObj.name).toLowerCase() : '';
     const s = [
-      e.type, e.eventType, e.key, e.card, e.cardType, e.kind, e.incidentType, e.description, e.color, e.code,
-      e.detail, e.subType, cardColor
+      e?.type, e?.eventType, e?.key, e?.card, e?.cardType, e?.kind, e?.incidentType, e?.description, e?.color, e?.code,
+      e?.detail, e?.subType, cardColor
     ].map(val).join('|');
     return s.includes('yellow') || s.includes('yellowcard') || s.includes('yc');
   };
@@ -267,13 +284,40 @@ function extractFromEvents(root, playerId, playerName){
     const cardObj = e?.card || e?.booking || e?.bookingCard || null;
     const cardColor = cardObj && (cardObj.color || cardObj.type || cardObj.name) ? String(cardObj.color || cardObj.type || cardObj.name).toLowerCase() : '';
     const s = [
-      e.type, e.eventType, e.key, e.card, e.cardType, e.kind, e.incidentType, e.description, e.color, e.code,
-      e.detail, e.subType, cardColor
+      e?.type, e?.eventType, e?.key, e?.card, e?.cardType, e?.kind, e?.incidentType, e?.description, e?.color, e?.code,
+      e?.detail, e?.subType, cardColor
     ].map(val).join('|');
     return s.includes('red') || s.includes('redcard') || s.includes('rc') || s.includes('second yellow');
   };
 
-  // gather all arrays that look event-ish
+  const eventId = (e)=>{
+    return String(
+      nz(asNum(e?.id), '') ||
+      nz(asNum(e?.eventId), '') ||
+      nz(asNum(e?.incidentId), '') ||
+      ''
+    );
+  };
+  const goalKey = (e, isPen)=>{
+    const m = nz(minuteOf(e), -1);
+    const s = nz(secondOf(e), -1);
+    const pid = nz(playerIdOf(e), -1);
+    const nm  = normName(playerNameOf(e));
+    const side = sideOf(e);
+    const id = eventId(e);
+    return id ? `G#${id}` : `G|m${m}|s${s}|p${pid}|n:${nm}|pen:${isPen?'1':'0'}|sd:${side}`;
+  };
+  const cardKey = (e, kind)=>{
+    const m = nz(minuteOf(e), -1);
+    const s = nz(secondOf(e), -1);
+    const pid = nz(playerIdOf(e), -1);
+    const nm  = normName(playerNameOf(e));
+    const side = sideOf(e);
+    const id = eventId(e);
+    return id ? `C#${id}` : `C|${kind}|m${m}|s${s}|p${pid}|n:${nm}|sd:${side}`;
+  };
+
+  // flatten & dedup across all event-like arrays
   const arrays = new Set();
   for(const node of walk(root)){
     for (const [k,valArr] of Object.entries(node||{})){
@@ -290,35 +334,76 @@ function extractFromEvents(root, playerId, playerName){
     }
   }
 
-  let sawSecondYellow = false;
+  const seenGoals = new Set();
+  const seenCards = new Set();
+  let sawSecondYellowText = false;
 
   for(const arr of arrays){
-    for(const ev of arr){
-      if(!ev || typeof ev!=='object') continue;
+    for(const e of arr){
+      if(!e || typeof e!=='object') continue;
+      if(isShootout(e)) continue; // ignore penalty shootouts
 
-      // goals
-      if(isGoalEvent(ev) && matchByPlayer(ev) && !isOwnGoal(ev)){
-        acc.goals += 1;
-        if(isPenaltyGoal(ev)) acc.penalty_goals += 1;
+      // GOALS
+      if(isGoalEvent(e) && matchByPlayer(e) && !isOwnGoal(e)){
+        const pen = isPenaltyGoal(e);
+        const k = goalKey(e, pen);
+        if(!seenGoals.has(k)){
+          seenGoals.add(k);
+          acc.goals += 1;
+          if(pen) acc.penalty_goals += 1;
+        }
       }
 
-      // assists
-      if(isGoalEvent(ev) && assistMatch(ev) && !isOwnGoal(ev)){
-        acc.assists += 1;
+      // ASSISTS
+      // We keep your existing assist total policy (prefer stats unless missing),
+      // but counting here doesn't hurt since we use it as fallback only.
+      const hasGoalShape = isGoalEvent(e) && !isOwnGoal(e);
+      if(hasGoalShape){
+        // detect assists by presence of assisting player fields
+        const aIds = [];
+        const aNames = [];
+        if (e?.assist) { aIds.push(asNum(e.assist.id)); aNames.push(e.assist?.name?.fullName || e.assistName); }
+        if (e?.assistId!=null) aIds.push(asNum(e.assistId));
+        if (e?.assisterId!=null) aIds.push(asNum(e.assisterId));
+        if (e?.assistPlayerId!=null) aIds.push(asNum(e.assistPlayerId));
+        if (e?.secondaryPlayerId!=null) aIds.push(asNum(e.secondaryPlayerId));
+        if (Array.isArray(e?.assists)) for(const a of e.assists){ aIds.push(asNum(a?.id)); aNames.push(a?.name?.fullName||a?.name); }
+        if (Array.isArray(e?.assistPlayers)) for(const a of e.assistPlayers){ aIds.push(asNum(a?.id)); aNames.push(a?.name?.fullName||a?.name); }
+        // if the *scorer* is our player, we don't increment assists here
+        // (Assist belongs to another player). We only increment if our
+        // player appears in the assist fields.
+        const scorerIsMe = matchByPlayer(e);
+        if(!scorerIsMe){
+          const meById = (playerId && aIds.some(id => id===playerId));
+          const meByName = (!playerId && aNames.some(nm => nm && normName(nm)===tName));
+          if(meById || meByName) acc.assists += 1;
+        }
       }
 
-      // cards
-      if(matchByPlayer(ev)){
-        if(isYellow(ev)) acc.yellow_cards += 1;
-        if(isRed(ev)) {
-          acc.red_cards += 1;
-          const det = String(nz(ev.detail,'') + ' ' + nz(ev.description,'')).toLowerCase();
-          if(det.includes('second yellow')) sawSecondYellow = true;
+      // CARDS
+      if(matchByPlayer(e)){
+        if(isYellow(e)){
+          const k = cardKey(e, 'Y');
+          if(!seenCards.has(k)){
+            seenCards.add(k);
+            acc.yellow_cards += 1;
+          }
+        }
+        if(isRed(e)){
+          const k = cardKey(e, 'R');
+          if(!seenCards.has(k)){
+            seenCards.add(k);
+            acc.red_cards += 1;
+          }
+          const det = String(nz(e.detail,'') + ' ' + nz(e.description,'')).toLowerCase();
+          if(det.includes('second yellow')) sawSecondYellowText = true;
         }
       }
     }
   }
-  if(sawSecondYellow && acc.yellow_cards===0) acc.yellow_cards = 1;
+
+  // If a description explicitly says "second yellow", ensure at least one yellow is counted
+  if(sawSecondYellowText && acc.yellow_cards===0) acc.yellow_cards = 1;
 
   return acc;
 }
@@ -399,7 +484,7 @@ function buildResult({ matchUrl, general, potm, playerNode, playerId, playerName
   const league_name = general.leagueName || null;
   const iso         = general.iso || null;
 
-  // 1) Base stats block (can be incomplete/zero)
+  // 1) Base stats block
   const base = extractStatsFromStatsBlocks(playerNode);
   let goals_stat = Number.isFinite(base.goals) ? base.goals : null;
   let pg_stat    = Number.isFinite(base.penalty_goals) ? base.penalty_goals : null;
@@ -417,18 +502,24 @@ function buildResult({ matchUrl, general, potm, playerNode, playerId, playerName
   // Goals overall
   let goals = Number.isFinite(goals_stat) ? goals_stat : (ev.goals || sm.goals || 0);
 
-  // PG: prefer events; if 0 there, prefer shotmap; if still 0, accept stats; finally 0.
+  // PG: prefer events; then shotmap; then stats
   let pg = (ev.penalty_goals > 0 ? ev.penalty_goals :
            (sm.penalty_goals > 0 ? sm.penalty_goals :
            (Number.isFinite(pg_stat) ? pg_stat : 0)));
+
+  // Ensure PG never exceeds goals
+  if(pg > goals) pg = goals;
 
   // Assists: keep stats unless missing -> use events
   let assists = ast || ev.assists || 0;
 
   // Cards: prefer events; then facts/bookings; then stats
   const facts = extractCardsFromFacts(next, playerId, playerName);
-  const yc = (ev.yellow_cards > 0 ? ev.yellow_cards : (facts.yellow > 0 ? facts.yellow : (Number.isFinite(yc_stat) ? yc_stat : 0)));
-  const rc = (ev.red_cards    > 0 ? ev.red_cards    : (facts.red    > 0 ? facts.red    : (Number.isFinite(rc_stat) ? rc_stat : 0)));
+  let yc = (ev.yellow_cards > 0 ? ev.yellow_cards : (facts.yellow > 0 ? facts.yellow : (Number.isFinite(yc_stat) ? yc_stat : 0)));
+  let rc = (ev.red_cards    > 0 ? ev.red_cards    : (facts.red    > 0 ? facts.red    : (Number.isFinite(rc_stat) ? rc_stat : 0)));
+
+  // Clamp RC to max 1 (sent off once)
+  if(rc > 1) rc = 1;
 
   // Minutes → FMP
   const fmp = clampInt(mins) >= 90;
@@ -474,7 +565,7 @@ function buildResult({ matchUrl, general, potm, playerNode, playerId, playerName
       full_match_played: !!fmp
     },
     echo_player_name: (playerNode && playerNode.name && (playerNode.name.fullName || playerNode.name)) || playerName || null,
-    source: "fotmob_html+events"
+    source: "fotmob_html+events_dedup"
   };
 }
 
