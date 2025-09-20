@@ -1,6 +1,6 @@
 // netlify/functions/check.mjs
 // Check one match URL for a given player (POTM + key stats) and emit a stable fixture fingerprint.
-// Fixes: accurate NPG/PG (multi-source), YC/RC from events (broad variants), robust minutes fallback.
+// Fixes: accurate NPG/PG (multi-source), YC/RC from events + facts fallback, robust minutes fallback.
 
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1));                // 2025-07-01
@@ -206,8 +206,7 @@ function extractFromEvents(root, playerId, playerName){
     const nm  = ev?.player?.name?.fullName || ev?.playerName || ev?.player || ev?.actor?.name || ev?.name || ev?.subject?.name || ev?.player1Name || null;
     if(playerId && pid === playerId) return true;
     if(!playerId && nm && normName(nm)===tName) return true;
-    // Some feeds put player under 'players' array:
-    if(Array.isArray(ev?.players)){
+    if(Array.isArray(ev?.players)){ // some feeds list players array
       for(const pl of ev.players){
         const id = asNum(pl?.id);
         const fn = pl?.name?.fullName || pl?.name;
@@ -247,15 +246,15 @@ function extractFromEvents(root, playerId, playerName){
   };
   const isPenaltyGoal = (ev) => {
     const t = text(ev.type, ev.eventType, ev.scoringType, ev.goalType, ev.detail, ev.subType, ev.situation, ev.description, ev.shotType?.name);
-    return /pen/.test(t) || ev?.isPenalty === true || ev?.penalty === true;
+    return /pen/.test(t) || ev?.isPenalty === true || ev?.penalty === true || ev?.code === 'penaltyScored';
   };
   const isYellow = (ev) => {
-    const t = text(ev.type, ev.eventType, ev.key, ev.card, ev.cardType, ev.kind, ev.incidentType, ev.description, ev.color);
+    const t = text(ev.type, ev.eventType, ev.key, ev.card, ev.cardType, ev.kind, ev.incidentType, ev.description, ev.color, ev.code);
     const d = text(ev.detail, ev.subType);
     return t.includes('yellow') || d.includes('yellow') || ev?.card === 'yellow' || ev?.color === 'yellow' || ev?.cardType === 'YELLOW' || ev?.code === 'yellowCard';
   };
   const isRed = (ev) => {
-    const t = text(ev.type, ev.eventType, ev.key, ev.card, ev.cardType, ev.kind, ev.incidentType, ev.description, ev.color);
+    const t = text(ev.type, ev.eventType, ev.key, ev.card, ev.cardType, ev.kind, ev.incidentType, ev.description, ev.color, ev.code);
     const d = text(ev.detail, ev.subType);
     return t.includes('red') || d.includes('red') || ev?.card === 'red' || ev?.color === 'red' || ev?.cardType === 'RED' || ev?.code === 'redCard' || d.includes('second yellow');
   };
@@ -268,9 +267,7 @@ function extractFromEvents(root, playerId, playerName){
         const e0 = val[0];
         const lowerKey = String(k).toLowerCase();
         if(
-          // common containers
-          /event|timeline|incident|card|goal/.test(lowerKey) ||
-          // element looks like an event
+          /event|timeline|incident|card|goal|booking/.test(lowerKey) ||
           (e0 && typeof e0==='object' && (
             'type' in e0 || 'eventType' in e0 || 'key' in e0 || 'card' in e0 ||
             'isGoal' in e0 || 'result' in e0 || 'assist' in e0 || 'player' in e0
@@ -313,6 +310,47 @@ function extractFromEvents(root, playerId, playerName){
   return acc;
 }
 
+// ---- EXTRA FALLBACK just for cards (facts/bookings style blocks) ----
+function extractCardsFromFacts(root, playerId, playerName){
+  const out = { yellow:0, red:0 };
+  const tName = normName(playerName||'');
+
+  const isMe = (obj)=>{
+    const id = asNum(obj?.playerId ?? obj?.id ?? obj?.player?.id ?? obj?.personId);
+    const nm = obj?.player?.name?.fullName || obj?.playerName || obj?.name || null;
+    if(playerId && id === playerId) return true;
+    if(!playerId && nm && normName(nm)===tName) return true;
+    return false;
+  };
+  const colorOf = (obj)=>{
+    const raw = String(obj?.card ?? obj?.cardType ?? obj?.color ?? obj?.type ?? obj?.code ?? '').toLowerCase();
+    if(raw.includes('yellow') || raw==='yc' || raw==='yellowcard' || raw==='yellow_card') return 'yellow';
+    if(raw.includes('red')    || raw==='rc' || raw==='redcard'    || raw==='red_card'    || raw==='secondyellow') return 'red';
+    if(String(obj?.description||'').toLowerCase().includes('second yellow')) return 'red';
+    return null;
+  };
+
+  for(const node of walk(root)){
+    // common places: matchFacts.cards, facts.bookings, content blocks
+    const arrays = [];
+    if(Array.isArray(node?.cards)) arrays.push(node.cards);
+    if(Array.isArray(node?.bookings)) arrays.push(node.bookings);
+    if(Array.isArray(node?.content)) arrays.push(node.content);
+    for(const arr of arrays){
+      for(const it of arr){
+        if(!it || typeof it!=='object') continue;
+        const col = colorOf(it);
+        if(!col) continue;
+        if(isMe(it)){
+          if(col==='yellow') out.yellow += 1;
+          if(col==='red')    out.red    += 1;
+        }
+      }
+    }
+  }
+  return out;
+}
+
 // ---- Fallback: derive from SHOTMAP if events missing ----
 function extractFromShotmap(root, playerId, playerName){
   const acc = { goals:0, penalty_goals:0 };
@@ -329,7 +367,8 @@ function extractFromShotmap(root, playerId, playerName){
     for(const sh of node.shotmap){
       if(!sh || typeof sh!=='object') continue;
       const goal = sh.isGoal === true || String(sh?.result||'').toLowerCase()==='goal';
-      const pen  = sh.isPenalty === true || String(sh?.situation||'').toLowerCase().includes('pen');
+      const pen  = sh.isPenalty === true || String(sh?.situation||'').toLowerCase().includes('pen') ||
+                   String(sh?.shotType?.name||'').toLowerCase().includes('pen');
       const own  = sh.isOwnGoal === true || String(sh?.description||'').toLowerCase().includes('own');
       if(goal && !own){ acc.goals += 1; if(pen) acc.penalty_goals += 1; }
     }
@@ -370,12 +409,15 @@ function buildResult(payload){
     if(!Number.isFinite(pg))    pg    = sm.penalty_goals;
   }
 
+  // 4) Cards fallback from match facts/bookings
+  const facts = extractCardsFromFacts(next, playerId, playerName);
+  yc = clampInt(Math.max(yc ?? 0, facts.yellow ?? 0));
+  rc = clampInt(Math.max(rc ?? 0, facts.red ?? 0));
+
   // sanitize
   goals = clampInt(goals ?? 0);
   pg    = clampInt(pg ?? 0);
   ast   = clampInt(ast ?? 0);
-  yc    = clampInt(yc ?? 0);
-  rc    = clampInt(rc ?? 0);
   mins  = clampInt(mins ?? 0);
   const fmp = mins >= 90;
 
@@ -404,7 +446,7 @@ function buildResult(payload){
     potm_name: potm?.name ? { fullName: potm.name } : null,
     potm_id: potm?.id ?? null,
 
-    // team identity for de-dupe
+    // team identity for de-dup
     home_team_id: general.hId ?? null,
     home_team_name: general.hName ?? null,
     away_team_id: general.aId ?? null,
