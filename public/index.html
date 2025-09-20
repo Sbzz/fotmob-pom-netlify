@@ -2,22 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>FotMob POTM & Stats (2025–26, Top 5 Leagues)</title>
+  <title>FotMob POTM & Stats • 2025–26 (Top 5 Leagues)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
-      --bg: #0b0f14;
-      --card: #121922;
-      --muted: #8aa0b7;
-      --text: #e9f0f7;
-      --accent: #4cc9f0;
-      --accent-2: #80ed99;
-      --warn: #ffd166;
-      --bad: #ef476f;
-      --good: #06d6a0;
-      --border: #1f2b3a;
+      --bg: #0b0f14; --card:#121922; --muted:#8aa0b7; --text:#e9f0f7;
+      --accent:#4cc9f0; --good:#06d6a0; --warn:#ffd166; --bad:#ef476f; --border:#1f2b3a;
     }
-    html, body { background: var(--bg); color: var(--text); margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, Apple Color Emoji, Segoe UI Emoji; }
+    html, body { background: var(--bg); color: var(--text); margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial;
+    }
     .wrap { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
     .grid { display:grid; grid-template-columns: 1fr; gap: 16px; }
     @media (min-width: 960px){ .grid { grid-template-columns: 1.1fr 1fr; } }
@@ -28,32 +22,25 @@
     textarea, input[type="text"] { width: 100%; background: #0f1620; border: 1px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: 12px; outline: none; }
     textarea { min-height: 110px; resize: vertical; }
     .row { display:flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    .row > * { flex: 0 0 auto; }
     .btn { background: #162231; border: 1px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: 12px; cursor: pointer; }
     .btn:hover { border-color: #2b3a51; }
     .btn.accent { background: var(--accent); color: #061019; border: none; }
     .btn.good { background: var(--good); color: #041411; border: none; }
     .btn.warn { background: var(--warn); color: #1e1200; border: none; }
-    .btn.bad { background: var(--bad); color: #22000a; border: none; }
     .pill { display:inline-block; padding: 4px 8px; border-radius: 999px; background: #0f1620; border:1px solid var(--border); font-size: 12px; color: var(--muted); }
+    .hr { height:1px; background: var(--border); margin: 12px 0; }
     .table-wrap { overflow:auto; border-radius: 12px; border:1px solid var(--border); }
     table { width:100%; border-collapse: collapse; min-width: 760px; }
     th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; }
     th { background: #0f1620; position: sticky; top: 0; z-index: 1; }
     tr:hover td { background: #0e1520; }
-    code { background: #0f1620; border:1px solid var(--border); padding: 2px 6px; border-radius: 6px; }
-    .hr { height:1px; background: var(--border); margin: 12px 0; }
-    .kpi { display:flex; gap:8px; align-items:center; }
-    .kpi b { font-size: 18px; }
-    .tag { padding:3px 8px; border-radius:999px; border:1px solid var(--border); background:#0f1620; color:var(--muted); font-size:12px; }
     .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <h1 style="margin:0 0 8px">Top 5 Leagues • 2025–26 • POTM & Match Stats</h1>
-    <div class="muted">Domestic league matches only (Premier League, LaLiga, Bundesliga, Serie A, Ligue 1), season window: <b>2025-07-01 → 2026-06-30</b>. POTM, FMP & assists from FotMob; goals (PG/NPG) + YC/RC fixed via improved parsing.</div>
+    <div class="muted">Domestic league matches only (PL, LaLiga, Bundesliga, Serie A, Ligue 1). Season: <b>2025-07-01 → 2026-06-30</b>.</div>
 
     <div class="grid" style="margin-top:16px">
       <div class="card">
@@ -65,7 +52,7 @@
           <button class="btn" id="btnCsvDefault">Load /players.csv</button>
           <span class="pill" id="csvCount">No CSV loaded</span>
         </div>
-        <div class="hint">CSV format: <span class="mono">player name,url</span> per line. Header is optional.</div>
+        <div class="hint">CSV format: <code>player name,url</code> per line. Header is optional.</div>
 
         <div class="hr"></div>
 
@@ -88,15 +75,14 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
         <div class="title">2) Run</div>
         <div class="row" style="margin-bottom:8px">
           <button class="btn accent" id="btnRun">Discover → Check</button>
-          <button class="btn warn" id="btnStop">Stop</button>
           <span class="pill" id="status">Idle</span>
         </div>
-        <div class="kpi" style="gap:16px; margin: 8px 0">
-          <div class="tag" id="kpiPlayers">Players: 0</div>
-          <div class="tag" id="kpiMatches">Matches found: 0</div>
-          <div class="tag" id="kpiChecked">Checked: 0</div>
+        <div class="row" style="gap:12px">
+          <span class="pill" id="kpiPlayers">Players: 0</span>
+          <span class="pill" id="kpiMatches">Matches found: 0</span>
+          <span class="pill" id="kpiChecked">Checked: 0</span>
         </div>
-        <div id="log" class="muted" style="white-space: pre-wrap;"></div>
+        <div id="log" class="muted" style="white-space: pre-wrap; margin-top:8px;"></div>
 
         <div class="hr"></div>
         <div class="row" style="margin-top:8px">
@@ -135,82 +121,49 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
 
 <script>
 (function(){
-  // --- State ---
+  // ---------- state & dom ----------
   const queued = new Map(); // url -> { name, url }
-  let stopFlag = false;
+  const el = id => document.getElementById(id);
+  const csvFile = el('csvFile'), btnCsvAdd = el('btnCsvAdd'), btnCsvDefault = el('btnCsvDefault'), csvCount = el('csvCount');
+  const urlsTA = el('urls'), btnQueue = el('btnQueue'), btnClear = el('btnClear'), queuedList = el('queuedList'), queuedCount = el('queuedCount');
+  const btnRun = el('btnRun'), status = el('status'), kpiPlayers = el('kpiPlayers'), kpiMatches = el('kpiMatches'), kpiChecked = el('kpiChecked'), logBox = el('log');
+  const tbody = el('tbody'), summary = el('summary');
+  const btnDownloadCSV = el('btnDownloadCSV'), btnDownloadJSON = el('btnDownloadJSON'), btnDownloadRowsCsv = el('btnDownloadRowsCsv'), btnDownloadRowsJson = el('btnDownloadRowsJson');
 
-  // --- DOM ---
-  const el = (id)=>document.getElementById(id);
-  const csvFile = el('csvFile');
-  const btnCsvAdd = el('btnCsvAdd');
-  const btnCsvDefault = el('btnCsvDefault');
-  const csvCount = el('csvCount');
-  const urlsTA = el('urls');
-  const btnQueue = el('btnQueue');
-  const btnClear = el('btnClear');
-  const queuedList = el('queuedList');
-  const queuedCount = el('queuedCount');
-  const btnRun = el('btnRun');
-  const btnStop = el('btnStop');
-  const status = el('status');
-  const kpiPlayers = el('kpiPlayers');
-  const kpiMatches = el('kpiMatches');
-  const kpiChecked = el('kpiChecked');
-  const logBox = el('log');
-
-  const tbody = el('tbody');
-  const summary = el('summary');
-
-  const btnDownloadCSV = el('btnDownloadCSV');
-  const btnDownloadJSON = el('btnDownloadJSON');
-  const btnDownloadRowsCsv = el('btnDownloadRowsCsv');
-  const btnDownloadRowsJson = el('btnDownloadRowsJson');
-
-  // --- Utils ---
-  const sleep = (ms)=> new Promise(r=>setTimeout(r,ms));
-  const setStatus = (t)=> status.textContent = t;
-  const appendLog = (t)=> { logBox.textContent += t + "\n"; logBox.scrollTop = logBox.scrollHeight; };
+  // ---------- utils ----------
+  const escapeHtml = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const csvEscape = v => { if(v==null) v=''; v=String(v); return /[",\n]/.test(v)? `"${v.replace(/"/g,'""')}"` : v; };
+  const setStatus = s => status.textContent = s;
+  const log = s => { logBox.textContent += s + "\n"; logBox.scrollTop = logBox.scrollHeight; };
 
   function normalizeUrl(u){
     u = String(u||'').trim();
     if(!u) return '';
-    // Accept en-GB localized too; strip locale path part
-    u = u.replace(/https?:\/\/www\.fotmob\.com\/(en-[A-Z]{2}\/)?/, 'https://www.fotmob.com/');
-    return u;
+    return u.replace(/https?:\/\/www\.fotmob\.com\/(en-[A-Z]{2}\/)?/, 'https://www.fotmob.com/');
   }
-  function isPlayerUrl(u){
-    return /https?:\/\/www\.fotmob\.com\/players\/\d+\/[^/\s]+$/i.test(u);
-  }
+  function isPlayerUrl(u){ return /https?:\/\/www\.fotmob\.com\/players\/\d+\/[^/\s]+$/i.test(u); }
+
   function parseCsv(text){
-    // very tolerant CSV: "name,url" per line; header optional; ignore blanks; allows quoted name/url
     const lines = text.replace(/\r/g,'').split('\n').map(s=>s.trim()).filter(Boolean);
     const out = [];
-    for(let i=0;i<lines.length;i++){
-      const line = lines[i];
-      // split by comma, respecting quotes (simple)
-      let parts = [];
-      let cur = '';
-      let inQ = false;
-      for(let j=0;j<line.length;j++){
-        const ch = line[j];
+    for(const line of lines){
+      let parts = []; let cur=''; let inQ=false;
+      for(const ch of line){
         if(ch === '"'){ inQ = !inQ; continue; }
         if(ch === ',' && !inQ){ parts.push(cur.trim()); cur=''; continue; }
         cur += ch;
       }
       parts.push(cur.trim());
       if(parts.length === 1){
-        // maybe only URL given
         const url = normalizeUrl(parts[0]);
-        if(isPlayerUrl(url)) out.push({name:'', url});
+        if(isPlayerUrl(url)) out.push({ name:'', url });
         continue;
       }
-      // assume first is name, second is url
       const name = parts[0].replace(/^['"]|['"]$/g,'').trim();
-      const url = normalizeUrl(parts[1].replace(/^['"]|['"]$/g,'').trim());
-      if(!isPlayerUrl(url)) continue;
-      out.push({name, url});
+      const url  = normalizeUrl(parts[1].replace(/^['"]|['"]$/g,'').trim());
+      if(isPlayerUrl(url)) out.push({ name, url });
     }
-    // drop header if it looks like one
+    // drop header row if present
     if(out.length){
       const h = out[0];
       if(/^name|player/i.test(h.name||'') || /^url$/i.test(h.url||'')) out.shift();
@@ -221,10 +174,8 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
   function refreshQueuedUI(){
     const arr = Array.from(queued.values());
     queuedCount.textContent = `Queued: ${arr.length}`;
-    if(!arr.length){ queuedList.textContent = ''; return; }
     queuedList.textContent = arr.map(x=>`• ${x.name ? x.name + ' — ' : ''}${x.url}`).join('\n');
   }
-
   function addPlayers(items){
     let added = 0;
     for(const it of items){
@@ -239,16 +190,14 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     return added;
   }
 
-  // --- CSV hooks ---
+  // CSV: upload or /players.csv
   btnCsvAdd.addEventListener('click', async ()=>{
     if(!csvFile.files || !csvFile.files[0]){ csvCount.textContent = 'No file selected'; return; }
-    const file = csvFile.files[0];
-    const text = await file.text();
+    const text = await csvFile.files[0].text();
     const items = parseCsv(text);
     const added = addPlayers(items);
     csvCount.textContent = added ? `Loaded ${added} from CSV` : 'No valid rows';
   });
-
   btnCsvDefault.addEventListener('click', async ()=>{
     try{
       const res = await fetch('players.csv', { cache: 'no-store' });
@@ -257,79 +206,44 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
       const items = parseCsv(txt);
       const added = addPlayers(items);
       csvCount.textContent = added ? `Loaded ${added} from /players.csv` : 'No valid rows in /players.csv';
-    }catch(e){
-      csvCount.textContent = 'Error loading /players.csv';
-    }
+    }catch(e){ csvCount.textContent = 'Error loading /players.csv'; }
   });
 
-  // --- Paste box ---
+  // Paste
   btnQueue.addEventListener('click', ()=>{
     const text = urlsTA.value || '';
     const rows = parseCsv(text);
-    // Also support lines that are just URLs (one per line)
-    const loneUrls = text.split('\n').map(s=>s.trim()).filter(s=>/^https?:\/\//i.test(s) && isPlayerUrl(s))
-      .map(u=>({name:'', url: normalizeUrl(u)}));
+    // also accept plain URL per line
+    const loneUrls = text.split('\n').map(s=>normalizeUrl(s.trim())).filter(isPlayerUrl).map(url=>({ name:'', url }));
     const items = rows.concat(loneUrls);
     const added = addPlayers(items);
-    appendLog(`Added ${added} players from paste.`);
+    log(`Added ${added} players from paste.`);
   });
-  btnClear.addEventListener('click', ()=>{
-    queued.clear();
-    refreshQueuedUI();
-    appendLog('Cleared queued players.');
-  });
+  btnClear.addEventListener('click', ()=>{ queued.clear(); refreshQueuedUI(); log('Cleared queued players.'); });
 
-  // --- Downloads ---
-  function download(filename, text, mime='text/plain'){
-    const blob = new Blob([text], { type: mime });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    a.click();
-    setTimeout(()=>URL.revokeObjectURL(a.href), 500);
-  }
-
-  // --- Runner ---
+  // API calls (unchanged)
   async function discover(urls){
-    const body = { urls };
     const res = await fetch('/.netlify/functions/discover', {
-      method: 'POST',
-      headers: { 'content-type':'application/json' },
-      body: JSON.stringify(body)
+      method: 'POST', headers: { 'content-type':'application/json' }, body: JSON.stringify({ urls })
     });
     const txt = await res.text();
-    try { return JSON.parse(txt); }
-    catch { return { ok:false, error:'Bad JSON from /discover', raw: txt.slice(0,300) }; }
+    try { return JSON.parse(txt); } catch { return { ok:false, error:'Bad JSON from /discover', raw: txt.slice(0,300) }; }
   }
   async function check(matchUrl, playerId, playerName){
     const res = await fetch('/.netlify/functions/check', {
-      method: 'POST',
-      headers: { 'content-type':'application/json' },
-      body: JSON.stringify({ matchUrl, playerId, playerName })
+      method: 'POST', headers: { 'content-type':'application/json' }, body: JSON.stringify({ matchUrl, playerId, playerName })
     });
     const txt = await res.text();
-    try { return JSON.parse(txt); }
-    catch { return { error:'Bad JSON from /check', raw: txt.slice(0,300) }; }
+    try { return JSON.parse(txt); } catch { return { error:'Bad JSON from /check', raw: txt.slice(0,300) }; }
   }
 
   function npg(goals, pg){ goals = goals|0; pg = pg|0; return Math.max(0, goals - pg); }
 
   function aggregate(playerName, playerUrl, rows){
-    const agg = {
-      player_name: playerName || '',
-      player_url: playerUrl,
-      checked: 0,
-      potm: 0,
-      goals: 0,
-      pg: 0,
-      assists: 0,
-      yc: 0,
-      rc: 0,
-      fmp: 0
-    };
+    const agg = { player_name: playerName||'', player_url: playerUrl, checked: 0, potm: 0, goals: 0, pg: 0, assists: 0, yc: 0, rc: 0, fmp: 0 };
     for(const r of rows){
       if(r.error) continue;
-      if(!(r.league_allowed && r.within_season_2025_26)) continue;
+      if(!(r.league_allowed && r.within_season_2025_26)) continue; // unchanged filter
       agg.checked += 1;
       if(r.player_is_pom) agg.potm += 1;
       const ps = r.player_stats || {};
@@ -345,11 +259,12 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
   }
 
   function renderTable(totals){
+    const tbody = document.getElementById('tbody');
     tbody.innerHTML = '';
     for(const t of totals){
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${escapeHtml(t.player_name || '(name unavailable)')}</td>
+        <td>${escapeHtml(t.player_name || '(name)')}</td>
         <td>${t.checked}</td>
         <td>${t.potm}</td>
         <td>${t.goals}</td>
@@ -358,20 +273,16 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
         <td>${t.assists}</td>
         <td>${t.yc}</td>
         <td>${t.rc}</td>
-        <td>${t.fmp}</td>
-      `;
+        <td>${t.fmp}</td>`;
       tbody.appendChild(tr);
     }
   }
 
-  function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-
   // simple async pool
   async function poolLimit(concurrency, tasks, worker){
     const ret = []; let i = 0; const running = new Set();
-    return new Promise((resolve, reject)=>{
+    return new Promise((resolve)=>{
       const runNext = ()=>{
-        if(stopFlag){ resolve(ret); return; }
         if(i >= tasks.length && running.size===0){ resolve(ret); return; }
         while(running.size < concurrency && i < tasks.length){
           const idx = i++; const t = tasks[idx];
@@ -385,65 +296,40 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     });
   }
 
+  // Run flow (unchanged, just feeds from CSV/paste queue)
   btnRun.addEventListener('click', async ()=>{
-    stopFlag = false;
-    setStatus('Running…');
-    appendLog('Starting…');
+    setStatus('Running…'); log('Starting…');
+
     const players = Array.from(queued.values());
-    if(players.length===0){
-      // try to parse the textarea directly as lone URLs
-      const text = urlsTA.value || '';
-      const direct = text.split('\n').map(s=>normalizeUrl(s.trim())).filter(isPlayerUrl).map(url=>({name:'', url}));
-      if(direct.length===0){ appendLog('No players queued.'); setStatus('Idle'); return; }
-      for(const p of direct) queued.set(p.url, p);
-    }
+    if(players.length===0){ log('No players queued.'); setStatus('Idle'); return; }
 
-    const finalPlayers = Array.from(queued.values());
-    kpiPlayers.textContent = `Players: ${finalPlayers.length}`;
+    kpiPlayers.textContent = `Players: ${players.length}`;
+    const urls = players.map(p=>p.url);
 
-    // DISCOVER
-    const urls = finalPlayers.map(p=>p.url);
-    appendLog(`Discovering matches for ${urls.length} players…`);
     const disc = await discover(urls);
     if(!disc || disc.ok === false){
       setStatus('Discover error');
-      appendLog(`Discover error: ${disc && (disc.error || disc.raw) || 'unknown'}`);
+      log(`Discover error: ${disc && (disc.error || disc.raw) || 'unknown'}`);
       return;
     }
 
-    // Map discover result by URL, inject CSV/pasted name if present
-    const byUrl = new Map();
-    let totalMatches = 0;
+    const byUrl = new Map(); let totalMatches = 0;
     for(const p of disc.players || []){
-      const url = p.player_url;
-      const injectedName = (queued.get(url) && queued.get(url).name) || p.player_name || '';
-      const item = {
-        url,
-        name: injectedName,
-        player_id: p.player_id || null,
-        match_urls: Array.isArray(p.match_urls) ? p.match_urls : [],
-        debug: p.debug || {}
-      };
+      const injectedName = (queued.get(p.player_url) && queued.get(p.player_url).name) || p.player_name || '';
+      const item = { url: p.player_url, name: injectedName, player_id: p.player_id || null, match_urls: Array.isArray(p.match_urls)? p.match_urls : [] };
       totalMatches += item.match_urls.length;
-      byUrl.set(url, item);
+      byUrl.set(p.player_url, item);
     }
     kpiMatches.textContent = `Matches found: ${totalMatches}`;
-    appendLog(`Matches found: ${totalMatches}`);
+    log(`Matches found: ${totalMatches}`);
 
-    // CHECK (limit concurrency)
-    const perPlayerResults = [];
     let checkedCount = 0;
+    const perPlayer = [];
 
-    for(const p of finalPlayers){
-      if(stopFlag) break;
+    for(const p of players){
       const d = byUrl.get(p.url) || { match_urls: [], player_id: null, name: p.name, url: p.url };
       const matches = d.match_urls || [];
-      if(matches.length===0){
-        perPlayerResults.push({ player: p, rows: [], agg: aggregate(d.name || p.name, p.url, []) });
-        continue;
-      }
 
-      // Worker for each match
       const rows = await poolLimit(5, matches, async (mUrl)=>{
         const r = await check(mUrl, d.player_id, d.name || p.name);
         checkedCount++;
@@ -451,23 +337,22 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
         return r;
       });
 
-      const aggRow = aggregate(d.name || p.name, p.url, rows);
-      perPlayerResults.push({ player: p, rows, agg: aggRow });
-      appendLog(`• ${aggRow.player_name || '(name)'}: checked ${aggRow.checked}, POTM ${aggRow.potm} | Goals ${aggRow.goals} (NPG ${aggRow.npg}, PG ${aggRow.pg}) | Ast ${aggRow.assists} | YC ${aggRow.yc} | RC ${aggRow.rc} | FMP ${aggRow.fmp}`);
+      const agg = aggregate(d.name || p.name, p.url, rows);
+      perPlayer.push({ rows, agg });
+      log(`• ${agg.player_name || '(name)'}: checked ${agg.checked}, POTM ${agg.potm} | Goals ${agg.goals} (NPG ${agg.npg}, PG ${agg.pg}) | Ast ${agg.assists} | YC ${agg.yc} | RC ${agg.rc} | FMP ${agg.fmp}`);
     }
 
-    // Render totals
-    const totals = perPlayerResults.map(x=>x.agg);
+    const totals = perPlayer.map(x=>x.agg);
     renderTable(totals);
     const sumPotm = totals.reduce((a,b)=>a + (b.potm||0),0);
     const sumChecked = totals.reduce((a,b)=>a + (b.checked||0),0);
-    summary.innerHTML = `Summary: ${totals.map(t=>`• ${escapeHtml(t.player_name || '(name)')}: checked ${t.checked}, POTM ${t.potm} | Goals ${t.goals} (NPG ${t.npg}, PG ${t.pg}) | Ast ${t.assists} | YC ${t.yc} | RC ${t.rc} | FMP ${t.fmp}`).join('<br>')}<br><br><span class="muted">Players: ${totals.length} | Total POTM: ${sumPotm} | Total matches checked: ${sumChecked}</span>`;
+    summary.innerHTML = `Summary: ${totals.map(t=>`• ${escapeHtml(t.player_name||'(name)')}: checked ${t.checked}, POTM ${t.potm} | Goals ${t.goals} (NPG ${t.npg}, PG ${t.pg}) | Ast ${t.assists} | YC ${t.yc} | RC ${t.rc} | FMP ${t.fmp}`).join('<br>')}<br><br><span class="muted">Players: ${totals.length} | Total POTM: ${sumPotm} | Total matches checked: ${sumChecked}</span>`;
 
-    // enable downloads
+    // downloads
     const rowsFlat = [];
-    for(const block of perPlayerResults){
+    for(const block of perPlayer){
       const pname = block.agg.player_name || '';
-      const purl = block.agg.player_url || block.player.url;
+      const purl = block.agg.player_url || '';
       for(const r of block.rows){
         rowsFlat.push({
           player_name: pname,
@@ -490,46 +375,34 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     }
 
     btnDownloadCSV.onclick = ()=>{
-      const lines = [
-        'player_name,player_url,checked,potm,goals,npg,pg,assists,yc,rc,fmp'
-      ];
+      const lines = ['player_name,player_url,checked,potm,goals,npg,pg,assists,yc,rc,fmp'];
       for(const t of totals){
         lines.push([
-          csvEscape(t.player_name || ''),
-          csvEscape(t.player_url || ''),
-          t.checked, t.potm, t.goals, t.npg, t.pg, t.assists, t.yc, t.rc, t.fmp
+          csvEscape(t.player_name||''), csvEscape(t.player_url||''), t.checked, t.potm, t.goals, t.npg, t.pg, t.assists, t.yc, t.rc, t.fmp
         ].join(','));
       }
       download('totals.csv', lines.join('\n'), 'text/csv');
     };
-    btnDownloadJSON.onclick = ()=>{
-      download('totals.json', JSON.stringify({ totals }, null, 2), 'application/json');
-    };
+    btnDownloadJSON.onclick = ()=> download('totals.json', JSON.stringify({ totals }, null, 2), 'application/json');
+
     btnDownloadRowsCsv.onclick = ()=>{
       const headers = Object.keys(rowsFlat[0] || {player_name:'',player_url:'',match_url:'',match_title:'',league_label:'',match_datetime_utc:'',potm:'',rating:'',goals:'',pg:'',npg:'',assists:'',yc:'',rc:'',fmp:''});
       const lines = [ headers.join(',') ];
-      for(const r of rowsFlat){
-        lines.push(headers.map(h=>csvEscape(r[h])).join(','));
-      }
+      for(const r of rowsFlat){ lines.push(headers.map(h=>csvEscape(r[h])).join(',')); }
       download('rows.csv', lines.join('\n'), 'text/csv');
     };
-    btnDownloadRowsJson.onclick = ()=>{
-      download('rows.json', JSON.stringify(rowsFlat, null, 2), 'application/json');
-    };
+    btnDownloadRowsJson.onclick = ()=> download('rows.json', JSON.stringify(rowsFlat, null, 2), 'application/json');
 
     setStatus('Done');
   });
 
-  btnStop.addEventListener('click', ()=>{
-    stopFlag = true;
-    setStatus('Stopping…');
-  });
-
-  function csvEscape(v){
-    if(v===null || v===undefined) v='';
-    v = String(v);
-    if(/[",\n]/.test(v)) return `"${v.replace(/"/g,'""')}"`;
-    return v;
+  function download(filename, text, mime='text/plain'){
+    const blob = new Blob([text], { type: mime });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 500);
   }
 })();
 </script>
