@@ -1,12 +1,16 @@
 // netlify/functions/discover.mjs
-// Discovery of 2025–26 Top-5 domestic league match URLs for player profile URLs,
-// with anchored-ID enrichment via /api/matchDetails so we can keep only valid,
-// already-played league fixtures.
+// Discover 2025–26 Top-5 domestic league matches for FotMob player URLs.
+// Strategy:
+// 1) Parse player __NEXT_DATA__ → collect (matchId, leagueId, kickoff).
+// 2) Parse team fixtures/matches pages __NEXT_DATA__ → collect more.
+// 3) If few/none, scrape /match/<id> anchors from BOTH pages and ENRICH each
+//    via /api/matchDetails to get leagueId + kickoff and filter properly.
+// Keeps only Top-5 domestic, within season window, and already kicked off.
 
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1));                // 2025-07-01
 const SEASON_END   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59));   // 2026-06-30 23:59:59
-const NOW          = new Date();                                    // keep only matches that have kicked off
+const NOW          = new Date();
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36";
 const HDRS_HTML = {
@@ -24,6 +28,7 @@ const HDRS_JSON = {
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const asNum = (v) => Number.isFinite(Number(v)) ? Number(v) : null;
+const resp = (code, obj) => ({ statusCode: code, headers:{ "content-type":"application/json" }, body: JSON.stringify(obj) });
 
 function toISO(v){
   if (!v) return null;
@@ -41,8 +46,6 @@ function inSeasonPast(iso){
   return d >= SEASON_START && d <= SEASON_END && d <= NOW;
 }
 
-function unique(arr){ return Array.from(new Set(arr)); }
-
 async function fetchText(url, retry=2){
   let last;
   for(let i=0;i<=retry;i++){
@@ -52,7 +55,7 @@ async function fetchText(url, retry=2){
       if(!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
       if(!html) throw new Error("Empty HTML");
       return { finalUrl: res.url || url, html };
-    }catch(e){ last = e; await sleep(200 + 250*i); }
+    }catch(e){ last = e; await sleep(220 + 260*i); }
   }
   throw last || new Error("fetch failed (html)");
 }
@@ -64,7 +67,7 @@ async function fetchJSON(url, retry=2){
       const txt = await res.text();
       if(!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} :: ${txt?.slice(0,160) || ""}`);
       return JSON.parse(txt);
-    }catch(e){ last = e; await sleep(250 + 300*i); }
+    }catch(e){ last = e; await sleep(280 + 300*i); }
   }
   throw last || new Error("fetch failed (json)");
 }
@@ -88,6 +91,7 @@ function* walk(root){
     }
   }
 }
+function unique(arr){ return Array.from(new Set(arr)); }
 
 function parsePlayerIdFromUrl(url){
   try{
@@ -95,6 +99,9 @@ function parsePlayerIdFromUrl(url){
     const m = u.pathname.match(/\/players\/(\d+)(?:\/|$)/i);
     return m ? Number(m[1]) : null;
   }catch{ return null; }
+}
+function collectAnchorIds(html){
+  return unique(Array.from(html.matchAll(/\/match\/(\d{5,10})/g)).map(m=>m[1]));
 }
 
 function discoverMatchesFromNextData(root){
@@ -146,6 +153,7 @@ function filterTop5SeasonPast(list){
   }
   return out;
 }
+
 function buildMatchUrls(listOrIds){
   const ids = Array.isArray(listOrIds)
     ? [...new Set(listOrIds.map(x => typeof x === "string" || typeof x === "number" ? String(x) : String(x.matchId)))]
@@ -163,37 +171,36 @@ async function getNextData(url){
 }
 
 async function enrichAnchorIds(ids, teamId){
-  // probe a limited number to avoid rate limits
-  const MAX_PROBE = 48;
+  // Probe a reasonable window to avoid rate limits
+  const MAX_PROBE = 96;
   const toProbe = [...new Set(ids)].slice(0, MAX_PROBE);
-  const CONC = 3;
-
-  const queue = [...toProbe];
+  const CONC = 2;             // gentle concurrency to avoid 401s
   const out = [];
+  const q = [...toProbe];
+
   const work = async (mid) => {
     try{
       const j = await fetchJSON(`https://www.fotmob.com/api/matchDetails?matchId=${mid}`);
-      // extract leagueId, kickoff, teams
       let leagueId = null, iso = null, hId = null, aId = null;
-      try{
-        leagueId = asNum(j?.general?.leagueId ?? j?.leagueId ?? j?.tournamentId ?? j?.competitionId);
-        const ts = j?.general?.matchTimeUTC || j?.general?.startTimeUTC || j?.matchTimeUTC || j?.startTimeUTC;
-        iso = toISO(ts);
-        hId = asNum(j?.general?.homeTeam?.id ?? j?.homeTeam?.id);
-        aId = asNum(j?.general?.awayTeam?.id ?? j?.awayTeam?.id);
-      }catch{}
+      leagueId = asNum(j?.general?.leagueId ?? j?.leagueId ?? j?.tournamentId ?? j?.competitionId);
+      const ts = j?.general?.matchTimeUTC || j?.general?.startTimeUTC || j?.matchTimeUTC || j?.startTimeUTC;
+      iso = toISO(ts);
+      hId = asNum(j?.general?.homeTeam?.id ?? j?.homeTeam?.id);
+      aId = asNum(j?.general?.awayTeam?.id ?? j?.awayTeam?.id);
+
       if (!Number.isFinite(leagueId) || !TOP5_LEAGUE_IDS.has(leagueId)) return;
       if (!iso || !inSeasonPast(iso)) return;
       if (Number.isFinite(teamId) && !(hId===teamId || aId===teamId)) return;
+
       out.push({ matchId: Number(mid), leagueId, iso });
-    }catch(_e){ /* ignore bad ids */ }
+    }catch(_e){ /* ignore */ }
   };
 
   const runners = new Array(CONC).fill(0).map(async ()=> {
-    while(queue.length){
-      const id = queue.shift();
+    while(q.length){
+      const id = q.shift();
       await work(id);
-      await sleep(120);
+      await sleep(180); // spacing to be polite
     }
   });
   await Promise.all(runners);
@@ -203,9 +210,8 @@ async function enrichAnchorIds(ids, teamId){
 async function discoverForPlayerUrl(playerUrl){
   const debug = {
     used: [],
-    player_page: { next_matches: 0, kept: 0, errors: [] },
-    team_pages:  { attempts: 0, next_matches: 0, kept: 0, errors: [] },
-    anchors:     { found: 0, probed: 0, kept: 0 },
+    player_page: { next_matches: 0, kept: 0, errors: [], anchors_found: 0, anchors_kept: 0, anchors_probed: 0 },
+    team_pages:  { attempts: 0, next_matches: 0, kept: 0, errors: [], anchors_found: 0, anchors_kept: 0, anchors_probed: 0 },
   };
 
   let player_id = parsePlayerIdFromUrl(playerUrl);
@@ -215,8 +221,10 @@ async function discoverForPlayerUrl(playerUrl){
   let matches = [];
 
   // 1) Player page
+  let playerHtml = "";
   try{
     const { next, html } = await getNextData(playerUrl);
+    playerHtml = html;
     const found = discoverMatchesFromNextData(next);
     if (found.playerId) player_id = player_id ?? found.playerId;
     if (found.playerName) player_name = found.playerName;
@@ -231,22 +239,23 @@ async function discoverForPlayerUrl(playerUrl){
     matches = matches.concat(kept);
 
     // collect anchors for enrichment fallback
-    const ids = Array.from(html.matchAll(/\/match\/(\d{5,10})/g)).map(m=>m[1]);
-    debug.anchors.found = ids.length;
+    const ids = collectAnchorIds(playerHtml);
+    debug.player_page.anchors_found = ids.length;
 
-    // Only run enrichment if we still have few/zero matches
+    // Enrich if still none/few
     if (matches.length === 0 && ids.length){
       const enriched = await enrichAnchorIds(ids, team_id ?? null);
-      debug.used.push("anchors_enriched");
-      debug.anchors.probed = Math.min(48, ids.length);
-      debug.anchors.kept = enriched.length;
+      debug.used.push("player_anchors_enriched");
+      debug.player_page.anchors_probed = Math.min(96, ids.length);
+      debug.player_page.anchors_kept = enriched.length;
       matches = matches.concat(enriched);
     }
   }catch(e){
     debug.player_page.errors.push(String(e));
   }
 
-  // 2) Team fixtures/matches pages (if we know team) — adds more dated matches
+  // 2) Team fixtures/matches pages (adds more dated matches + anchors)
+  let teamAnchors = [];
   if (team_id){
     const tryUrls = [];
     const base = `https://www.fotmob.com/teams/${team_id}`;
@@ -259,7 +268,7 @@ async function discoverForPlayerUrl(playerUrl){
     for (const u of tryUrls){
       try{
         debug.team_pages.attempts += 1;
-        const { next } = await getNextData(u);
+        const { next, html } = await getNextData(u);
         const found = discoverMatchesFromNextData(next);
         debug.used.push("team_next");
         debug.team_pages.next_matches += found.matches.length;
@@ -267,13 +276,28 @@ async function discoverForPlayerUrl(playerUrl){
         const kept = filterTop5SeasonPast(found.matches);
         debug.team_pages.kept += kept.length;
         matches = matches.concat(kept);
+
+        // also gather anchors for enrichment if still empty
+        const ids = collectAnchorIds(html);
+        teamAnchors = teamAnchors.concat(ids);
       }catch(e){
         debug.team_pages.errors.push(`${u} :: ${String(e)}`);
       }
     }
+
+    // only enrich team anchors if we still have nothing
+    if (matches.length === 0 && teamAnchors.length){
+      teamAnchors = unique(teamAnchors);
+      debug.team_pages.anchors_found = teamAnchors.length;
+      const enriched = await enrichAnchorIds(teamAnchors, team_id);
+      debug.used.push("team_anchors_enriched");
+      debug.team_pages.anchors_probed = Math.min(96, teamAnchors.length);
+      debug.team_pages.anchors_kept = enriched.length;
+      matches = matches.concat(enriched);
+    }
   }
 
-  // Deduplicate -> URLs
+  // Deduplicate → URLs
   const urlList = buildMatchUrls(matches);
 
   return {
@@ -292,14 +316,18 @@ export async function handler(event){
     let payload = {};
     if (event.httpMethod === "POST"){
       try{ payload = JSON.parse(event.body || "{}"); }
-      catch { return { statusCode:400, headers:{ "content-type":"application/json" }, body: JSON.stringify({ ok:false, error:"Provide { urls: [...] }" }) }; }
+      catch { return resp(400, { ok:false, error:"Provide { urls: [...] }" }); }
+    } else if (event.httpMethod === "GET"){
+      const q = event.queryStringParameters?.urls || "";
+      const urls = decodeURIComponent(q).split(/[,\n]/).map(s=>s.trim()).filter(Boolean);
+      payload = { urls };
     } else {
-      return { statusCode:400, headers:{ "content-type":"application/json" }, body: JSON.stringify({ ok:false, error:"Provide { urls: [...] }" }) };
+      return resp(400, { ok:false, error:"Provide { urls: [...] }" });
     }
 
     const urls = Array.isArray(payload.urls) ? payload.urls : [];
     if (!urls.length){
-      return { statusCode:200, headers:{ "content-type":"application/json" }, body: JSON.stringify({ ok:false, error:"Provide { urls: [...] }" }) };
+      return resp(200, { ok:false, error:"Provide { urls: [...] }" });
     }
 
     const players = [];
@@ -312,8 +340,8 @@ export async function handler(event){
       }
     }
 
-    return { statusCode:200, headers:{ "content-type":"application/json" }, body: JSON.stringify({ ok:true, players }) };
+    return resp(200, { ok:true, players });
   }catch(e){
-    return { statusCode:500, headers:{ "content-type":"application/json" }, body: JSON.stringify({ ok:false, error:String(e) }) };
+    return resp(500, { ok:false, error:String(e) });
   }
 }
