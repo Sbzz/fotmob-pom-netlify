@@ -1,9 +1,6 @@
 // netlify/functions/check.mjs
 // Check one match URL for a given player (POTM + key stats) and emit a stable fixture fingerprint.
 // Fixes: accurate NPG/PG (multi-source), YC/RC from events (broad variants), robust minutes fallback.
-//
-// Input (POST JSON): { matchUrl, playerId?, playerName? }
-// Output fields used by index.html (incl. fixture_key for de-dup)
 
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1));                // 2025-07-01
@@ -66,7 +63,7 @@ function* walk(root){
 }
 function normName(s){ return String(s||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim(); }
 
-// Create a stable key for a fixture (minute precision)
+// Stable key for a fixture (minute precision)
 function mkFixtureKey(leagueId, iso, hId, aId, hName, aName){
   const lid = leagueId ?? 'X';
   const t   = (iso||'').slice(0,16); // YYYY-MM-DDTHH:MM
@@ -75,7 +72,7 @@ function mkFixtureKey(leagueId, iso, hId, aId, hName, aName){
   return `L${lid}|${t}|${H}|${A}`;
 }
 
-// ---- Extraction helpers from match __NEXT_DATA__ ----
+// ---- General from match __NEXT_DATA__ ----
 function extractGeneral(root){
   let leagueId=null, leagueName=null, iso=null, title=null, mid=null;
   let hId=null, aId=null, hName=null, aName=null;
@@ -196,49 +193,71 @@ function extractStatsFromStatsBlocks(node){
   return acc;
 }
 
-// ---- Robust EVENTS extraction (goals/penalties/assists/cards) ----
+// ---------- EVENTS extraction (goals/penalties/assists/cards) ----------
 function extractFromEvents(root, playerId, playerName){
   const acc = { goals:0, penalty_goals:0, assists:0, yellow_cards:0, red_cards:0 };
   const tName = normName(playerName||'');
 
   const matchId = (ev) => {
-    const pid = asNum(ev?.player?.id ?? ev?.playerId ?? ev?.actor?.id ?? ev?.participant?.id ?? ev?.subject?.id);
-    const nm  = ev?.player?.name?.fullName || ev?.playerName || ev?.player || ev?.actor?.name || ev?.name || ev?.subject?.name || null;
+    const pid = asNum(
+      ev?.player?.id ?? ev?.playerId ?? ev?.actor?.id ?? ev?.participant?.id ??
+      ev?.subject?.id ?? ev?.player1Id ?? ev?.playerId1
+    );
+    const nm  = ev?.player?.name?.fullName || ev?.playerName || ev?.player || ev?.actor?.name || ev?.name || ev?.subject?.name || ev?.player1Name || null;
     if(playerId && pid === playerId) return true;
     if(!playerId && nm && normName(nm)===tName) return true;
+    // Some feeds put player under 'players' array:
+    if(Array.isArray(ev?.players)){
+      for(const pl of ev.players){
+        const id = asNum(pl?.id);
+        const fn = pl?.name?.fullName || pl?.name;
+        if(playerId && id===playerId) return true;
+        if(!playerId && fn && normName(fn)===tName) return true;
+      }
+    }
     return false;
   };
+
   const assistMatch = (ev) => {
-    const aid = asNum(ev?.assist?.id ?? ev?.assistId ?? ev?.assisterId ?? ev?.assistPlayerId ?? ev?.secondaryPlayerId);
-    const anm = ev?.assist?.name?.fullName || ev?.assistName || ev?.assisterName || ev?.secondaryPlayerName || null;
-    if(playerId && aid === playerId) return true;
-    if(!playerId && anm && normName(anm)===tName) return true;
+    const ids = [];
+    const names = [];
+    if (ev?.assist) { ids.push(asNum(ev.assist.id)); names.push(ev.assist?.name?.fullName || ev.assistName); }
+    if (ev?.assistId!=null) ids.push(asNum(ev.assistId));
+    if (ev?.assisterId!=null) ids.push(asNum(ev.assisterId));
+    if (ev?.assistPlayerId!=null) ids.push(asNum(ev.assistPlayerId));
+    if (ev?.secondaryPlayerId!=null) ids.push(asNum(ev.secondaryPlayerId));
+    if (Array.isArray(ev?.assists)) for(const a of ev.assists){ ids.push(asNum(a?.id)); names.push(a?.name?.fullName||a?.name); }
+    if (Array.isArray(ev?.assistPlayers)) for(const a of ev.assistPlayers){ ids.push(asNum(a?.id)); names.push(a?.name?.fullName||a?.name); }
+    if(playerId && ids.some(id => id===playerId)) return true;
+    if(!playerId){
+      for(const nm of names){ if(nm && normName(nm)===tName) return true; }
+    }
     return false;
   };
 
   const text = (...xs)=> String(xs.find(v=>v!=null) ?? '').toLowerCase();
   const isGoalEvent = (ev) => {
-    const t = text(ev.type, ev.eventType, ev.incidentType, ev.key, ev.code, ev.kind, ev.result);
-    const d = text(ev.detail, ev.subType, ev.scoringType, ev.goalType, ev.outcome);
+    const t = text(ev.type, ev.eventType, ev.incidentType, ev.key, ev.code, ev.kind, ev.result, ev.action);
+    const d = text(ev.detail, ev.subType, ev.scoringType, ev.goalType, ev.outcome, ev.description);
     return t.includes('goal') || d.includes('goal') || t==='score' || t==='scored' || ev?.isGoal===true;
   };
   const isOwnGoal = (ev) => {
-    const t = text(ev.detail, ev.subType, ev.scoringType, ev.goalType, ev.description);
-    return t.includes('own') || ev?.isOwnGoal === true;
+    const t = text(ev.detail, ev.subType, ev.scoringType, ev.goalType, ev.description, ev.result);
+    return t.includes('own') || ev?.isOwnGoal === true || t.includes('og');
   };
   const isPenaltyGoal = (ev) => {
-    const t = text(ev.type, ev.eventType, ev.scoringType, ev.goalType, ev.detail, ev.subType, ev.situation, ev.description);
-    return t.includes('pen') || ev?.isPenalty === true || ev?.penalty === true || (ev?.shotType?.name && /pen/i.test(ev.shotType.name));
+    const t = text(ev.type, ev.eventType, ev.scoringType, ev.goalType, ev.detail, ev.subType, ev.situation, ev.description, ev.shotType?.name);
+    return /pen/.test(t) || ev?.isPenalty === true || ev?.penalty === true;
   };
   const isYellow = (ev) => {
-    const t = text(ev.type, ev.eventType, ev.key, ev.card, ev.cardType, ev.kind, ev.incidentType, ev.description);
+    const t = text(ev.type, ev.eventType, ev.key, ev.card, ev.cardType, ev.kind, ev.incidentType, ev.description, ev.color);
     const d = text(ev.detail, ev.subType);
-    return t.includes('yellow') || d.includes('yellow') || ev?.card === 'yellow';
+    return t.includes('yellow') || d.includes('yellow') || ev?.card === 'yellow' || ev?.color === 'yellow' || ev?.cardType === 'YELLOW' || ev?.code === 'yellowCard';
   };
   const isRed = (ev) => {
-    const t = text(ev.type, ev.eventType, ev.key, ev.card, ev.cardType, ev.kind, ev.incidentType, ev.description);
+    const t = text(ev.type, ev.eventType, ev.key, ev.card, ev.cardType, ev.kind, ev.incidentType, ev.description, ev.color);
     const d = text(ev.detail, ev.subType);
-    return t.includes('red') || d.includes('red') || ev?.card === 'red' || d.includes('second yellow');
+    return t.includes('red') || d.includes('red') || ev?.card === 'red' || ev?.color === 'red' || ev?.cardType === 'RED' || ev?.code === 'redCard' || d.includes('second yellow');
   };
 
   // Collect arrays that look event-ish
@@ -247,10 +266,16 @@ function extractFromEvents(root, playerId, playerName){
     for (const [k,val] of Object.entries(node||{})){
       if(Array.isArray(val) && val.length){
         const e0 = val[0];
-        if(e0 && typeof e0==='object' && (
+        const lowerKey = String(k).toLowerCase();
+        if(
+          // common containers
+          /event|timeline|incident|card|goal/.test(lowerKey) ||
+          // element looks like an event
+          (e0 && typeof e0==='object' && (
             'type' in e0 || 'eventType' in e0 || 'key' in e0 || 'card' in e0 ||
             'isGoal' in e0 || 'result' in e0 || 'assist' in e0 || 'player' in e0
-        )){
+          ))
+        ){
           arrays.add(val);
         }
       }
