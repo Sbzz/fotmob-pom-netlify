@@ -1,42 +1,30 @@
 // netlify/functions/check.mjs
-// Keeps your existing FotMob logic for: POTM, FMP, assists, discovery, de-dup.
-// Adds secondary source (SofaScore) ONLY to improve: Penalty goals (PG) & Yellow/Red cards.
-// Also removes all "??" usage to avoid bundler error with "||".
+// Purpose: Check one FotMob match URL for a given player and return POTM + key stats.
+// This version *fixes* PG/NPG and YC/RC by prioritizing events (then shotmap) over a "0" in stats blocks.
+// Everything else (POTM, FMP, assists, season filter, league filter, fixture_key, etc.) stays the same.
 
-// ======= CONFIG =======
+// ================== CONFIG ==================
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1));                // 2025-07-01
 const SEASON_END   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59));   // 2026-06-30
 const NOW          = new Date();
 
-// helper to replace nullish coalescing (a ?? b)
+// Replace nullish coalescing
 const nz = (v, fallback) => (v === null || v === undefined ? fallback : v);
 
-// Turn SofaScore augmentation on/off via env; defaults ON
-const USE_SOFASCORE = (nz(process.env.USE_SOFASCORE, "1") !== "0");
-
-// Shared headers
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36";
-const COMMON_HDRS = {
-  "user-agent": UA,
-  "accept-language": "en-GB,en;q=0.9"
-};
-const FOTMOB_HDRS = {
-  ...COMMON_HDRS,
+const HDRS = {
   accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-  referer: "https://www.fotmob.com/"
-};
-const SOFA_HDRS = {
-  ...COMMON_HDRS,
-  accept: "application/json,text/plain,*/*",
-  referer: "https://www.sofascore.com/"
+  "user-agent": UA,
+  referer: "https://www.fotmob.com/",
+  "accept-language": "en-GB,en;q=0.9"
 };
 
 const resp = (code, obj) => ({ statusCode: code, headers: { "content-type": "application/json" }, body: JSON.stringify(obj) });
 const asNum = (v) => Number.isFinite(Number(v)) ? Number(v) : null;
 const clampInt = (v) => Number.isFinite(v) ? Math.max(0, Math.trunc(v)) : 0;
 
-// ======= UTILS =======
+// ================== UTILS ==================
 function toISO(v){
   if (v === null || v === undefined) return null;
   const n = Number(v);
@@ -53,22 +41,13 @@ function inSeason(iso){
   return d >= SEASON_START && d <= SEASON_END && d <= NOW;
 }
 
-async function fetchText(url, headers){
-  const res = await fetch(url, { headers, redirect: "follow" });
-  const text = await res.text();
+async function fetchText(url){
+  const res = await fetch(url, { headers: HDRS, redirect: "follow" });
+  const html = await res.text();
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-  if (!text) throw new Error("Empty response");
-  return { finalUrl: res.url || url, text };
+  if (!html) throw new Error("Empty HTML");
+  return { finalUrl: res.url || url, html };
 }
-async function fetchJSON(url, headers){
-  const res = await fetch(url, { headers, redirect: "follow" });
-  const txt = await res.text();
-  if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-  if (!txt) throw new Error("Empty response");
-  try { return { finalUrl: res.url || url, json: JSON.parse(txt) }; }
-  catch { throw new Error("Bad JSON from " + url); }
-}
-
 function nextDataStr(html){
   const m = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
   return m ? m[1] : null;
@@ -90,6 +69,7 @@ function* walk(root){
 }
 function normName(s){ return String(s||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim(); }
 
+// fixture fingerprint (minute precision)
 function mkFixtureKey(leagueId, iso, hId, aId, hName, aName){
   const lid = nz(leagueId, 'X');
   const t   = (iso || '').slice(0,16); // YYYY-MM-DDTHH:MM
@@ -98,7 +78,7 @@ function mkFixtureKey(leagueId, iso, hId, aId, hName, aName){
   return `L${lid}|${t}|${H}|${A}`;
 }
 
-// ======= FOTMOB PARSERS =======
+// ================== FOTMOB PARSERS ==================
 function extractGeneral(root){
   let leagueId=null, leagueName=null, iso=null, title=null, mid=null;
   let hId=null, aId=null, hName=null, aName=null;
@@ -106,18 +86,18 @@ function extractGeneral(root){
   const setTeams = (g)=>{
     const home = g?.homeTeam || g?.home || null;
     const away = g?.awayTeam || g?.away || null;
-    if(home){ hId = hId !== null && hId !== undefined ? hId : asNum(home.id); hName = hName || (home.name || home.teamName || home.shortName || null); }
-    if(away){ aId = aId !== null && aId !== undefined ? aId : asNum(away.id); aName = aName || (away.name || away.teamName || away.shortName || null); }
+    if(home){ hId = (hId !== null && hId !== undefined) ? hId : asNum(home.id); hName = hName || (home.name || home.teamName || home.shortName || null); }
+    if(away){ aId = (aId !== null && aId !== undefined) ? aId : asNum(away.id); aName = aName || (away.name || away.teamName || away.shortName || null); }
   };
 
   for(const node of walk(root)){
     const g = node?.general || node?.overview?.general || node?.match?.general || null;
     if(!g) continue;
-    leagueId   = leagueId !== null && leagueId !== undefined ? leagueId : asNum(g.leagueId || g.tournamentId || g.competitionId);
-    leagueName = leagueName || (g.leagueName || g.tournamentName || g.competitionName || (g?.league && g.league.name) || (g?.tournament && g.tournament.name) || (g?.competition && g.competition.name));
-    iso        = iso || toISO(g.matchTimeUTC || g.startTimeUTC || (g.kickoff && g.kickoff.utc) || g.dateUTC);
+    leagueId   = (leagueId !== null && leagueId !== undefined) ? leagueId : asNum(g.leagueId || g.tournamentId || g.competitionId);
+    leagueName = leagueName || (g.leagueName || g.tournamentName || g.competitionName || g?.league?.name || g?.tournament?.name || g?.competition?.name);
+    iso        = iso || toISO(g.matchTimeUTC || g.startTimeUTC || g?.kickoff?.utc || g.dateUTC);
     title      = title || (g.pageTitle || g.matchName || g.title);
-    mid        = mid !== null && mid !== undefined ? mid : asNum(g.matchId || g.id);
+    mid        = (mid !== null && mid !== undefined) ? mid : asNum(g.matchId || g.id);
     setTeams(g);
     if(leagueId && iso && (hId||hName) && (aId||aName)) break;
   }
@@ -140,6 +120,7 @@ function extractPOTM(root){
       return { id, name: nm, rating: ratingNum };
     }
   }
+  // Fallback: highest finished rating
   let best = null;
   for(const node of walk(root)){
     if(!node?.rating) continue;
@@ -214,108 +195,229 @@ function extractStatsFromStatsBlocks(node){
   return acc;
 }
 
-// ======= SOFASCORE AUGMENT (only PG + cards) =======
-function cleanTeam(s){
-  return normName(s).replace(/\b(cf|fc|sc|ac|club|cd|ud|sd|de|real|athletic|atletico)\b/g,'').replace(/[^a-z ]/g,'').replace(/\s+/g,' ').trim();
-}
-function approxSameTeam(a,b){
-  a = cleanTeam(a); b = cleanTeam(b);
-  if(a===b) return true;
-  return a.includes(b) || b.includes(a);
-}
+// ================== EVENTS: goals (PG) + assists + cards ==================
+function extractFromEvents(root, playerId, playerName){
+  const acc = { goals:0, penalty_goals:0, assists:0, yellow_cards:0, red_cards:0 };
+  const tName = normName(playerName||'');
 
-async function findSofaEventId({ homeName, awayName, iso }){
-  const q = encodeURIComponent(`${homeName} ${awayName}`);
-  const url = `https://api.sofascore.com/api/v1/search/all?q=${q}`;
-  const { json } = await fetchJSON(url, SOFA_HDRS);
-  const ts = Math.floor(new Date(iso).getTime()/1000);
-  const lo = ts - 12*3600, hi = ts + 12*3600;
-
-  const events = (json && (json.events || (json.results && json.results.events))) || [];
-  let best = null, bestScore = -1;
-
-  for(const ev of events){
-    const start = asNum(ev && ev.startTimestamp);
-    if(!start || start < lo || start > hi) continue;
-
-    const hn = (ev && ev.homeTeam && (ev.homeTeam.name || ev.homeTeam.shortName)) || '';
-    const an = (ev && ev.awayTeam && (ev.awayTeam.name || ev.awayTeam.shortName)) || '';
-    if(!hn || !an) continue;
-
-    const teamHit = (approxSameTeam(hn, homeName) && approxSameTeam(an, awayName)) ||
-                    (approxSameTeam(hn, awayName) && approxSameTeam(an, homeName));
-    if(!teamHit) continue;
-
-    let score = 0;
-    score += 10 - Math.min(10, Math.abs(start - ts)/600);
-    if(approxSameTeam(hn, homeName)) score += 2;
-    if(approxSameTeam(an, awayName)) score += 2;
-
-    if(score > bestScore){ bestScore = score; best = ev; }
-  }
-
-  return best && best.id ? best.id : null;
-}
-
-async function sofaIncidentsToCounts(sofaEventId, playerName){
-  const { json } = await fetchJSON(`https://api.sofascore.com/api/v1/event/${sofaEventId}/incidents`, SOFA_HDRS);
-  const tName = normName(playerName);
-
-  const matchPlayer = (obj)=>{
-    const nm = (obj && (obj.player && obj.player.name)) || obj?.playerName || obj?.playerShortName || obj?.playerSlug || obj?.player || null;
-    if(nm && normName(nm)===tName) return true;
-    const a = obj?.assistant || obj?.assistPlayer;
-    if(a && normName((a && a.name) || a)===tName) return true;
+  const matchByPlayer = (obj)=>{
+    const pid = asNum(
+      obj?.player?.id || obj?.playerId || obj?.actor?.id || obj?.participant?.id ||
+      obj?.subject?.id || obj?.player1Id || obj?.playerId1
+    );
+    const nm  = obj?.player?.name?.fullName || obj?.playerName || obj?.player || obj?.actor?.name || obj?.name || obj?.subject?.name || obj?.player1Name || null;
+    if(playerId && pid === playerId) return true;
+    if(!playerId && nm && normName(nm)===tName) return true;
+    if(Array.isArray(obj?.players)){
+      for(const p of obj.players){
+        const id = asNum(p?.id);
+        const fn = p?.name?.fullName || p?.name;
+        if(playerId && id===playerId) return true;
+        if(!playerId && fn && normName(fn)===tName) return true;
+      }
+    }
+    return false;
+  };
+  const assistMatch = (obj)=>{
+    const ids = [];
+    const names = [];
+    if (obj?.assist) { ids.push(asNum(obj.assist.id)); names.push(obj.assist?.name?.fullName || obj.assistName); }
+    if (obj?.assistId!=null) ids.push(asNum(obj.assistId));
+    if (obj?.assisterId!=null) ids.push(asNum(obj.assisterId));
+    if (obj?.assistPlayerId!=null) ids.push(asNum(obj.assistPlayerId));
+    if (obj?.secondaryPlayerId!=null) ids.push(asNum(obj.secondaryPlayerId));
+    if (Array.isArray(obj?.assists)) for(const a of obj.assists){ ids.push(asNum(a?.id)); names.push(a?.name?.fullName||a?.name); }
+    if (Array.isArray(obj?.assistPlayers)) for(const a of obj.assistPlayers){ ids.push(asNum(a?.id)); names.push(a?.name?.fullName||a?.name); }
+    if(playerId && ids.some(id => id===playerId)) return true;
+    if(!playerId) for(const nm of names){ if(nm && normName(nm)===tName) return true; }
     return false;
   };
 
-  let goals=0, pg=0, yc=0, rc=0;
+  const text = (...xs)=> String(xs.find(v=>v!=null) ?? '').toLowerCase();
+  const isGoalEvent = (e) => {
+    const t = text(e.type, e.eventType, e.incidentType, e.key, e.code, e.kind, e.result, e.action);
+    const d = text(e.detail, e.subType, e.scoringType, e.goalType, e.outcome, e.description);
+    return t.includes('goal') || d.includes('goal') || t==='score' || t==='scored' || e?.isGoal===true;
+  };
+  const isOwnGoal = (e) => {
+    const t = text(e.detail, e.subType, e.scoringType, e.goalType, e.description, e.result);
+    return t.includes('own') || e?.isOwnGoal === true || t.includes('og');
+  };
+  const isPenaltyGoal = (e) => {
+    const t = text(e.type, e.eventType, e.scoringType, e.goalType, e.detail, e.subType, e.situation, e.description, e?.shotType?.name);
+    return /pen/.test(t) || e?.isPenalty === true || e?.penalty === true || e?.code === 'penaltyScored';
+  };
+  const isYellow = (e) => {
+    const t = text(e.type, e.eventType, e.key, e.card, e.cardType, e.kind, e.incidentType, e.description, e.color, e.code);
+    const d = text(e.detail, e.subType);
+    return t.includes('yellow') || d.includes('yellow') || e?.card === 'yellow' || e?.color === 'yellow' || e?.cardType === 'YELLOW' || e?.code === 'yellowCard';
+  };
+  const isRed = (e) => {
+    const t = text(e.type, e.eventType, e.key, e.card, e.cardType, e.kind, e.incidentType, e.description, e.color, e.code);
+    const d = text(e.detail, e.subType);
+    return t.includes('red') || d.includes('red') || e?.card === 'red' || e?.color === 'red' || e?.cardType === 'RED' || e?.code === 'redCard' || d.includes('second yellow');
+  };
 
-  const all = []
-    .concat((json && json.incidents) || [])
-    .concat((json && json.events) || [])
-    .concat((json && json.timeline) || [])
-    .filter(Boolean);
-
-  for(const ev of all){
-    const type = String(ev?.type || ev?.incidentType || ev?.category || '').toLowerCase();
-
-    // goals
-    if((type.includes('goal') || ev?.isGoal === true) && matchPlayer(ev)){
-      goals += 1;
-      const pen = (ev && ev.isPenalty === true) ||
-                  /pen/.test(String(ev?.goalType||ev?.shotType||ev?.description||'').toLowerCase());
-      if(pen) pg += 1;
-    }
-
-    // cards
-    if((type.includes('card') || ev?.card) && matchPlayer(ev)){
-      const color = String(ev?.color || ev?.card || ev?.cardType || '').toLowerCase();
-      const desc  = String(ev?.description || ev?.detail || '').toLowerCase();
-      if(color.includes('yellow') || ev?.code === 'yellowCard') yc += 1;
-      if(color.includes('red')    || ev?.code === 'redCard' || desc.includes('second yellow')) rc += 1;
+  // identify arrays that likely contain event-like objects
+  const arrays = new Set();
+  for(const node of walk(root)){
+    for (const [k,val] of Object.entries(node||{})){
+      if(Array.isArray(val) && val.length){
+        const e0 = val[0];
+        const lowerKey = String(k).toLowerCase();
+        if(
+          /event|timeline|incident|card|goal|booking/.test(lowerKey) ||
+          (e0 && typeof e0==='object' && (
+            'type' in e0 || 'eventType' in e0 || 'key' in e0 || 'card' in e0 ||
+            'isGoal' in e0 || 'result' in e0 || 'assist' in e0 || 'player' in e0
+          ))
+        ){
+          arrays.add(val);
+        }
+      }
     }
   }
 
-  return { goals, pg, yc, rc };
+  let sawSecondYellow = false;
+
+  for(const arr of arrays){
+    for(const ev of arr){
+      if(!ev || typeof ev!=='object') continue;
+
+      // Goals
+      if(isGoalEvent(ev) && matchByPlayer(ev) && !isOwnGoal(ev)){
+        acc.goals += 1;
+        if(isPenaltyGoal(ev)) acc.penalty_goals += 1;
+      }
+
+      // Assists
+      if(isGoalEvent(ev) && assistMatch(ev) && !isOwnGoal(ev)){
+        acc.assists += 1;
+      }
+
+      // Cards
+      if(matchByPlayer(ev)){
+        if(isYellow(ev)) acc.yellow_cards += 1;
+        if(isRed(ev)) {
+          acc.red_cards += 1;
+          if(text(ev.detail).includes('second yellow')) sawSecondYellow = true;
+        }
+      }
+    }
+  }
+
+  if(sawSecondYellow && acc.yellow_cards===0) acc.yellow_cards = 1;
+
+  return acc;
 }
 
-// ======= BUILD PER-MATCH RESULT =======
-function buildFotmobOnly({ matchUrl, general, potm, playerNode, playerId, playerName, next }){
+// Extra fallback ONLY for cards (e.g., facts/bookings blocks)
+function extractCardsFromFacts(root, playerId, playerName){
+  const out = { yellow:0, red:0 };
+  const tName = normName(playerName||'');
+
+  const isMe = (obj)=>{
+    const id = asNum(obj?.playerId || obj?.id || obj?.player?.id || obj?.personId);
+    const nm = obj?.player?.name?.fullName || obj?.playerName || obj?.name || null;
+    if(playerId && id === playerId) return true;
+    if(!playerId && nm && normName(nm)===tName) return true;
+    return false;
+  };
+  const colorOf = (obj)=>{
+    const raw = String(obj?.card || obj?.cardType || obj?.color || obj?.type || obj?.code || '').toLowerCase();
+    if(raw.includes('yellow') || raw==='yc' || raw==='yellowcard' || raw==='yellow_card') return 'yellow';
+    if(raw.includes('red')    || raw==='rc' || raw==='redcard'    || raw==='red_card'    || raw==='secondyellow') return 'red';
+    if(String(obj?.description||'').toLowerCase().includes('second yellow')) return 'red';
+    return null;
+  };
+
+  for(const node of walk(root)){
+    const arrays = [];
+    if(Array.isArray(node?.cards)) arrays.push(node.cards);
+    if(Array.isArray(node?.bookings)) arrays.push(node.bookings);
+    if(Array.isArray(node?.content)) arrays.push(node.content);
+    for(const arr of arrays){
+      for(const it of arr){
+        if(!it || typeof it!=='object') continue;
+        const col = colorOf(it);
+        if(!col) continue;
+        if(isMe(it)){
+          if(col==='yellow') out.yellow += 1;
+          if(col==='red')    out.red    += 1;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// Shotmap fallback for (goals/penalties) only
+function extractFromShotmap(root, playerId, playerName){
+  const acc = { goals:0, penalty_goals:0 };
+  const tName = normName(playerName||'');
+
+  for(const node of walk(root)){
+    const id   = asNum(node?.id || node?.playerId);
+    const name = node?.name?.fullName || node?.name || null;
+
+    if(!Array.isArray(node?.shotmap)) continue;
+    const isMe = (playerId && id===playerId) || (!playerId && name && normName(name)===tName);
+    if(!isMe) continue;
+
+    for(const sh of node.shotmap){
+      if(!sh || typeof sh!=='object') continue;
+      const goal = sh.isGoal === true || String(sh?.result||'').toLowerCase()==='goal';
+      const pen  = sh.isPenalty === true ||
+                   String(sh?.situation||'').toLowerCase().includes('pen') ||
+                   String(sh?.shotType?.name||'').toLowerCase().includes('pen');
+      const own  = sh.isOwnGoal === true || String(sh?.description||'').toLowerCase().includes('own');
+      if(goal && !own){ acc.goals += 1; if(pen) acc.penalty_goals += 1; }
+    }
+  }
+  return acc;
+}
+
+// ================== BUILD PER-MATCH ==================
+function buildResult({ matchUrl, general, potm, playerNode, playerId, playerName, next }){
   const league_id   = asNum(general.leagueId);
   const league_name = general.leagueName || null;
   const iso         = general.iso || null;
 
+  // --- Base from stats block (can be partial/zero-ish) ---
   const base = extractStatsFromStatsBlocks(playerNode);
-  let goals  = clampInt(nz(base.goals, 0));
-  let pg     = clampInt(nz(base.penalty_goals, 0));
-  let ast    = clampInt(nz(base.assists, 0));
-  let yc     = Number.isFinite(base.yellow_cards) ? clampInt(base.yellow_cards) : 0;
-  let rc     = Number.isFinite(base.red_cards) ? clampInt(base.red_cards) : 0;
-  let mins   = clampInt(nz(base.minutes_played, 0));
-  const rating = (base.rating!=null ? Number(base.rating) : null);
-  const fmp = mins >= 90;
+  let goals_stat = Number.isFinite(base.goals) ? base.goals : null;
+  let pg_stat    = Number.isFinite(base.penalty_goals) ? base.penalty_goals : null;
+  let ast        = Number.isFinite(base.assists) ? base.assists : 0;
+  let yc_stat    = Number.isFinite(base.yellow_cards) ? base.yellow_cards : null;
+  let rc_stat    = Number.isFinite(base.red_cards) ? base.red_cards : null;
+  let mins       = Number.isFinite(base.minutes_played) ? base.minutes_played : 0;
+  let rating     = Number.isFinite(base.rating) ? base.rating : null;
 
+  // --- Events (authoritative for PG & cards) ---
+  const ev = extractFromEvents(next, playerId, playerName);
+
+  // --- Shotmap fallback for goals/PG only ---
+  const sm = extractFromShotmap(next, playerId, playerName);
+
+  // ---- Merge Strategy ----
+  // Goals: keep stats if present; otherwise use events; otherwise shotmap.
+  let goals = Number.isFinite(goals_stat) ? goals_stat : (ev.goals || sm.goals || 0);
+
+  // Penalties: prefer events; if events say 0, prefer shotmap; if still 0, fall back to stats.
+  let pg = (ev.penalty_goals > 0 ? ev.penalty_goals : (sm.penalty_goals > 0 ? sm.penalty_goals : (Number.isFinite(pg_stat) ? pg_stat : 0)));
+
+  // Assists: keep stats unless stats missing -> use events
+  let assists = ast || ev.assists || 0;
+
+  // Cards: prefer events; if events 0, try facts/bookings; finally stats.
+  const facts = extractCardsFromFacts(next, playerId, playerName);
+  const yc = (ev.yellow_cards > 0 ? ev.yellow_cards : (facts.yellow > 0 ? facts.yellow : (Number.isFinite(yc_stat) ? yc_stat : 0)));
+  const rc = (ev.red_cards    > 0 ? ev.red_cards    : (facts.red    > 0 ? facts.red    : (Number.isFinite(rc_stat) ? rc_stat : 0)));
+
+  // Minutes/FMP
+  const fmp = clampInt(mins) >= 90;
+
+  // POTM flag
   const pid = asNum(playerId);
   const player_is_pom =
     !!potm && ((pid && potm.id && pid === potm.id) || (!pid && potm.name && normName(potm.name) === normName(playerName||'')));
@@ -335,11 +437,13 @@ function buildFotmobOnly({ matchUrl, general, potm, playerNode, playerId, player
     match_datetime_utc: iso,
     league_allowed: (league_id !== null && league_id !== undefined) && TOP5_LEAGUE_IDS.has(league_id),
     within_season_2025_26: !!iso && inSeason(iso),
+
     player_is_pom,
-    player_rating: rating,
+    player_rating: (rating!=null ? Number(rating) : null),
     potm_name: potm && potm.name ? { fullName: potm.name } : null,
     potm_id: potm ? potm.id : null,
 
+    // team identity for de-dup
     home_team_id: (general.hId !== undefined ? general.hId : null),
     home_team_name: general.hName || null,
     away_team_id: (general.aId !== undefined ? general.aId : null),
@@ -347,19 +451,19 @@ function buildFotmobOnly({ matchUrl, general, potm, playerNode, playerId, player
     fixture_key,
 
     player_stats: {
-      goals,
-      penalty_goals: pg,
-      assists: ast,
-      yellow_cards: yc,
-      red_cards: rc,
+      goals: clampInt(goals),
+      penalty_goals: clampInt(pg),
+      assists: clampInt(assists),
+      yellow_cards: clampInt(yc),
+      red_cards: clampInt(rc),
       full_match_played: !!fmp
     },
     echo_player_name: (playerNode && playerNode.name && (playerNode.name.fullName || playerNode.name)) || playerName || null,
-    source: "fotmob_html"
+    source: "fotmob_html+events"
   };
 }
 
-// ======= MAIN HANDLER =======
+// ================== HANDLER ==================
 export async function handler(event){
   try{
     if(event.httpMethod!=="POST"){
@@ -373,8 +477,7 @@ export async function handler(event){
     const playerName = String(body.playerName||"").trim();
     if(!/\/match\/\d+/.test(matchUrl)) return resp(200,{ error:"Provide matchUrl like https://www.fotmob.com/match/123456" });
 
-    // 1) Fetch FotMob HTML + __NEXT_DATA__
-    const { text: html } = await fetchText(matchUrl, FOTMOB_HDRS);
+    const { html } = await fetchText(matchUrl);
     const s = nextDataStr(html);
     if(!s) return resp(200, { error:"NEXT_DATA not found" });
     const next = safeJSON(s);
@@ -384,40 +487,7 @@ export async function handler(event){
     const potm = extractPOTM(next) || null;
     const node = (playerId || playerName) ? findPlayerNode(next, playerId||null, playerName||null) : null;
 
-    // 2) Build baseline result from FotMob (keeps your POTM/FMP/assists, etc.)
-    const out = buildFotmobOnly({ matchUrl, general, potm, playerNode: node, playerId, playerName, next });
-
-    // 3) Augment PG + YC/RC using SofaScore incidents for valid domestic 2025-26 matches
-    if (USE_SOFASCORE && out.league_allowed && out.within_season_2025_26 && out.match_datetime_utc && out.home_team_name && out.away_team_name) {
-      try{
-        const sofaId = await findSofaEventId({
-          homeName: out.home_team_name,
-          awayName: out.away_team_name,
-          iso: out.match_datetime_utc
-        });
-
-        if(sofaId){
-          const agg = await sofaIncidentsToCounts(sofaId, out.echo_player_name || playerName);
-          // Merge (prefer SofaScore when it finds positive counts)
-          if(agg.pg > 0 || out.player_stats.penalty_goals === 0){
-            out.player_stats.penalty_goals = clampInt(agg.pg);
-          }
-          if((agg.goals > 0 && out.player_stats.goals === 0) || agg.goals >= out.player_stats.goals){
-            out.player_stats.goals = clampInt(agg.goals);
-          }
-          if(agg.yc > 0 || out.player_stats.yellow_cards === 0){
-            out.player_stats.yellow_cards = clampInt(agg.yc);
-          }
-          if(agg.rc > 0 || out.player_stats.red_cards === 0){
-            out.player_stats.red_cards = clampInt(agg.rc);
-          }
-          out.source = (out.source || "") + "+sofa_incidents";
-        }
-      }catch(e){
-        out.sofa_error = String(e).slice(0,180); // soft-fail
-      }
-    }
-
+    const out = buildResult({ matchUrl, general, potm, playerNode: node, playerId, playerName, next });
     return resp(200, out);
 
   }catch(e){
