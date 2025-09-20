@@ -96,8 +96,13 @@
       return new Promise(async (resolve)=>{
         let i=0, active=0, out=[];
         const next=()=>{ if(i>=items.length && active===0) return resolve(out);
-          while(active<limit && i<items.length){ const idx=i++, item=items[idx]; active++;
-            Promise.resolve(worker(item,idx)).then(res=>{ out[idx]=res; }).catch(err=>{ out[idx]={error:String(err)}; }).finally(()=>{ active--; next(); }); }
+          while(active<limit && i<items.length){
+            const idx=i++, item=items[idx]; active++;
+            Promise.resolve(worker(item,idx))
+              .then(res=>{ out[idx]=res; })
+              .catch(err=>{ out[idx]={error:String(err)}; })
+              .finally(()=>{ active--; next(); });
+          }
         }; next();
       });
     }
@@ -113,11 +118,19 @@
 
     // ----- Name helpers -----
     const slugToName = (url) => { try{ const parts=new URL(url||'').pathname.split('/'); const slug=decodeURIComponent(parts[parts.length-1]||'').replace(/-/g,' ').trim(); return slug?slug.replace(/\b\w/g,c=>c.toUpperCase()):''; }catch{ return ''; } };
-    const displayName = (p) => { const n=(p?.player_name||'').trim(); if(n) return n; return slugToName(p?.player_url||'') || '(unknown)'; };
+    const resolveName = (player) => {
+      const a=(player?.player_name||'').trim();
+      if(a) return a;
+      // scan raw rows for first echo name
+      for(const r of (player?.raw||[])){
+        if(r && r.echo_player_name){ const n=String(r.echo_player_name).trim(); if(n) return n; }
+      }
+      return slugToName(player?.player_url||'') || '(unknown)';
+    };
     const pidFromUrl=(u)=>{ const m=(u||'').match(/\/players\/(\d+)(?:\/|$)/); return m?Number(m[1]):null; };
 
-    function aggregatePlayerMatches(rows){
-      const ok = (rows||[]).filter(r=>r && !r.error);
+    function aggregate(rows){
+      const ok=(rows||[]).filter(r=>r && !r.error);
       const acc={goals:0,npg:0,pg:0,assists:0,yc:0,rc:0,fmp:0,potm:0,checked:0};
       for(const r of ok){
         const s=r.player_stats||{};
@@ -125,25 +138,24 @@
         if(r.player_is_pom) acc.potm+=1;
         acc.goals+=Number(s.goals||0);
         acc.pg+=Number(s.penalty_goals||0);
-        const npg=(s.non_penalty_goals!=null)?Number(s.non_penalty_goals):Math.max(0,Number(s.goals||0)-Number(s.penalty_goals||0));
-        acc.npg+=npg;
+        acc.npg+=Math.max(0, Number(s.goals||0)-Number(s.penalty_goals||0));
         acc.assists+=Number(s.assists||0);
         acc.yc+=Number(s.yellow_cards||0);
         acc.rc+=Number(s.red_cards||0);
         acc.fmp+=(s.full_match_played?1:0);
       }
-      for(const k of ['goals','pg','npg','assists','yc','rc','fmp','potm','checked']) acc[k]=Math.trunc(acc[k]);
+      for(const k of Object.keys(acc)) acc[k]=Math.trunc(acc[k]);
       return acc;
     }
 
     function renderPlayerCard(p){
-      const nm = displayName(p);
+      const nm=resolveName(p);
       const card=document.createElement('div'); card.className='playerCard';
       const head=document.createElement('div'); head.className='head';
       head.innerHTML=`<div class="name">${nm}</div><div class="muted small">${p.player_url||''}</div>`;
       card.appendChild(head);
 
-      const agg=aggregatePlayerMatches(p.raw);
+      const agg=aggregate(p.raw);
       const summary=document.createElement('div'); summary.className='summaryLine';
       summary.textContent=`• ${nm}: checked ${agg.checked}, POTM ${agg.potm} | Goals ${agg.goals} (NPG ${agg.npg}, PG ${agg.pg}) | Ast ${agg.assists} | YC ${agg.yc} | RC ${agg.rc} | FMP ${agg.fmp}`;
       card.appendChild(summary);
@@ -161,7 +173,6 @@
       const tb=table.querySelector('tbody');
       for(const r of (p.raw||[])){
         const s=r.player_stats||{};
-        const npg=(s.non_penalty_goals!=null)?s.non_penalty_goals:Math.max(0,(s.goals||0)-(s.penalty_goals||0));
         const tr=document.createElement('tr'); tr.innerHTML=`
           <td><a href="${r.match_url}" target="_blank" rel="noopener">${r.match_title||r.resolved_match_id||'match'}</a></td>
           <td>${r.league_label??''}</td>
@@ -169,7 +180,7 @@
           <td>${r.player_is_pom?'✅':''}</td>
           <td>${(r.player_rating!=null?Number(r.player_rating).toFixed(2):'')}</td>
           <td>${s.goals??''}</td>
-          <td>${npg}</td>
+          <td>${Math.max(0, Number(s.goals||0)-Number(s.penalty_goals||0))}</td>
           <td>${s.penalty_goals??''}</td>
           <td>${s.assists??''}</td>
           <td>${s.yellow_cards??''}</td>
@@ -181,72 +192,74 @@
       grid.appendChild(table); card.appendChild(grid); return card;
     }
 
-    let lastSummaryRows=[], lastDetailRows=[], lastJSON=null;
-    function toSummaryCSVRows(results){ const rows=[["player_name","player_url","checked","potm","goals","npg","pg","assists","yc","rc","fmp"]]; for(const p of results){ const agg=aggregatePlayerMatches(p.raw); rows.push([displayName(p),p.player_url,agg.checked,agg.potm,agg.goals,agg.npg,agg.pg,agg.assists,agg.yc,agg.rc,agg.fmp]); } return rows; }
-    function toDetailCSVRows(results){ const rows=[["player_name","player_url","match_url","match_title","league","date_utc","potm","rating","goals","npg","pg","assists","yc","rc","fmp","source"]]; for(const p of results){ for(const r of (p.raw||[])){ const s=r.player_stats||{}; const npg=(s.non_penalty_goals!=null)?s.non_penalty_goals:Math.max(0,(s.goals||0)-(s.penalty_goals||0)); rows.push([displayName(p),p.player_url,r.match_url,r.match_title||r.resolved_match_id||'',r.league_label??'',r.match_datetime_utc??'',r.player_is_pom?"1":"0",(r.player_rating!=null?String(Number(r.player_rating).toFixed(2)):""),s.goals??'',npg,s.penalty_goals??'',s.assists??'',s.yellow_cards??'',s.red_cards??'',s.full_match_played?"1":"0",r.source||'']); } } return rows; }
+    let lastSummary=[], lastDetails=[], lastJSON=null;
+    const toSummaryCSV=(res)=>{ const rows=[["player_name","player_url","checked","potm","goals","npg","pg","assists","yc","rc","fmp"]]; for(const p of res){ const a=aggregate(p.raw); rows.push([resolveName(p),p.player_url,a.checked,a.potm,a.goals,a.npg,a.pg,a.assists,a.yc,a.rc,a.fmp]); } return rows; };
+    const toDetailsCSV=(res)=>{ const rows=[["player_name","player_url","match_url","match_title","league","date_utc","potm","rating","goals","npg","pg","assists","yc","rc","fmp","source"]]; for(const p of res){ for(const r of (p.raw||[])){ const s=r.player_stats||{}; rows.push([resolveName(p),p.player_url,r.match_url,r.match_title||r.resolved_match_id||'',r.league_label??'',r.match_datetime_utc??'',r.player_is_pom?"1":"0",(r.player_rating!=null?String(Number(r.player_rating).toFixed(2)):""),s.goals??'',Math.max(0, Number(s.goals||0)-Number(s.penalty_goals||0)),s.penalty_goals??'',s.assists??'',s.yellow_cards??'',s.red_cards??'',s.full_match_played?"1":"0",r.source||'']); } } return rows; };
 
-    btnReset.addEventListener('click',()=>{ urlsEl.value=''; matchesEl.value=''; resultsEl.innerHTML=''; setStatusPills([{text:'Reset',type:'ok'}]); btnDownloadSummary.disabled=btnDownloadDetails.disabled=btnDownloadJSON.disabled=true; lastSummaryRows=[]; lastDetailRows=[]; lastJSON=null; });
+    btnReset.addEventListener('click',()=>{ urlsEl.value=''; matchesEl.value=''; resultsEl.innerHTML=''; setStatusPills([{text:'Reset',type:'ok'}]); btnDownloadSummary.disabled=btnDownloadDetails.disabled=btnDownloadJSON.disabled=true; lastSummary=[]; lastDetails=[]; lastJSON=null; });
 
     btnDiscover.addEventListener('click', async()=>{
       resultsEl.innerHTML=''; setStatusPills([{text:'Discovering…',type:'warn'}]);
-      const rawLines=urlsEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-      if(!rawLines.length){ setStatusPills([{text:'Provide one or more player URLs',type:'error'}]); return; }
+      const lines=urlsEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+      if(!lines.length){ setStatusPills([{text:'Provide player URLs',type:'error'}]); return; }
       try{
-        const res=await fetch('/.netlify/functions/discover',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({urls:rawLines})});
+        const res=await fetch('/.netlify/functions/discover',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({urls:lines})});
         const data=await res.json(); if(!data||!data.ok) throw new Error((data&&data.error)||'Discover failed');
         const players=data.players||[]; const all=[]; for(const p of players){ (p.match_urls||[]).forEach(u=>all.push(u)); }
         matchesEl.value=all.join('\n');
         setStatusPills([{text:`Players: ${players.length}`,type:'ok'},{text:`Matches found: ${all.length}`,type:all.length?'ok':'warn'}]);
-        window.__players=players.map(p=>({ player_url:p.player_url, player_name:(p.player_name||'').trim() || (p.player_url.split('/').pop()||'').replace(/-/g,' '), player_id:p.player_id||pidFromUrl(p.player_url)||null, match_urls:(p.match_urls||[]) }));
+        window.__players=players.map(p=>({ player_url:p.player_url, player_name:(p.player_name||'').trim() || (p.player_url.split('/').pop()||'').replace(/-/g,' '), player_id:p.player_id || (p.player_url && (p.player_url.match(/\/players\/(\d+)/)||[])[1]) || null, match_urls:(p.match_urls||[]) }));
       }catch(e){ setStatusPills([{text:`Discover error: ${String(e).slice(0,140)}`,type:'error'}]); }
     });
 
     btnRun.addEventListener('click', async()=>{
-      resultsEl.innerHTML=''; setStatusPills([{text:'Checking matches…',type:'warn'}]); btnDownloadSummary.disabled=btnDownloadDetails.disabled=btnDownloadJSON.disabled=true;
+      resultsEl.innerHTML=''; setStatusPills([{text:'Checking matches…',type:'warn'}]);
+      btnDownloadSummary.disabled=btnDownloadDetails.disabled=btnDownloadJSON.disabled=true;
+
       const discovered=(window.__players&&window.__players.length)?window.__players:[];
       const pasted=matchesEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-      const players=discovered.length?discovered:[{player_url:'',player_name:'(unknown)',player_id:null,match_urls:pasted}];
-
+      const players=discovered.length?discovered:[{player_url:'',player_name:'',player_id:null,match_urls:pasted}];
       const results=[];
+
       for(const p of players){
-        const m=(p.match_urls&&p.match_urls.length)?p.match_urls:pasted.filter(u=>/\/match\/\d+/.test(u));
-        const pid=p.player_id??pidFromUrl(p.player_url);
-        const tasks=m.map(u=>({matchUrl:u,playerId:pid,playerName:p.player_name||''}));
+        const matchUrls=(p.match_urls&&p.match_urls.length)?p.match_urls:pasted.filter(u=>/\/match\/\d+/.test(u));
+        const pid=p.player_id?Number(p.player_id):null;
+        const tasks=matchUrls.map(u=>({ matchUrl:u, playerId:pid, playerName:p.player_name||'' }));
 
         const perMatch=await throttleQueue(tasks,3,async(t)=>{
           try{
-            const res=await fetch('/.netlify/functions/check',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({playerId:t.playerId||undefined,playerName:t.playerName||undefined,matchUrl:t.matchUrl})});
-            const j=await res.json();
+            const r=await fetch('/.netlify/functions/check',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({playerId:t.playerId||undefined,playerName:t.playerName||undefined,matchUrl:t.matchUrl})});
+            const j=await r.json();
             if(j && j.league_allowed && j.within_season_2025_26) return j;
             return null;
           }catch{ return null; }
         });
 
-        const keptOk=(perMatch||[]).filter(Boolean);
+        const ok=(perMatch||[]).filter(Boolean);
 
-        // PATCH NAME from first successful result (echo), if missing
-        if ((!p.player_name || p.player_name === '(unknown)') && keptOk.length && keptOk[0].echo_player_name){
-          p.player_name = keptOk[0].echo_player_name;
+        // Patch name with first echoed value if empty
+        if((!p.player_name||p.player_name==='(unknown)') && ok.length && ok[0].echo_player_name){
+          p.player_name=ok[0].echo_player_name;
         }
 
-        results.push({ player_url:p.player_url, player_name:p.player_name, checked_matches:keptOk.length, raw:keptOk });
-        appendStatus(`✓ ${displayName(p)}: ${keptOk.length} checked`,'ok');
+        results.push({ player_url:p.player_url, player_name:p.player_name, raw:ok });
+        appendStatus(`✓ ${resolveName({player_name:p.player_name,player_url:p.player_url})}: ${ok.length} checked`,'ok');
       }
 
       resultsEl.innerHTML='';
-      if(!results.length){ setStatusPills([{text:'No results',type:'warn'}]); return; }
-      for(const r of results){ resultsEl.appendChild(renderPlayerCard({ player_name:r.player_name, player_url:r.player_url||'', raw:r.raw })); }
+      for(const r of results) resultsEl.appendChild(renderPlayerCard(r));
 
-      lastSummaryRows=toSummaryCSVRows(results); lastDetailRows=toDetailCSVRows(results); lastJSON={results};
+      lastSummary=toSummaryCSV(results); lastDetails=toDetailsCSV(results); lastJSON={results};
       btnDownloadSummary.disabled=btnDownloadDetails.disabled=btnDownloadJSON.disabled=false;
+
       setStatusPills([{text:`Players processed: ${results.length}`,type:'ok'},{text:`Matches checked: ${results.reduce((a,p)=>a+p.raw.length,0)}`,type:'ok'}]);
     });
 
-    qs('#btnDownloadSummary').addEventListener('click',()=>{ if(!lastSummaryRows.length) return; downloadCSV('summary_potm_stats_2025_26.csv', lastSummaryRows); });
-    qs('#btnDownloadDetails').addEventListener('click',()=>{ if(!lastDetailRows.length) return; downloadCSV('details_potm_stats_2025_26.csv', lastDetailRows); });
-    qs('#btnDownloadJSON').addEventListener('click',()=>{ if(!lastJSON) return; downloadJSON('potm_stats_2025_26.json', lastJSON); });
+    document.getElementById('btnDownloadSummary').addEventListener('click',()=>{ if(lastSummary.length) downloadCSV('summary_potm_stats_2025_26.csv', lastSummary); });
+    document.getElementById('btnDownloadDetails').addEventListener('click',()=>{ if(lastDetails.length) downloadCSV('details_potm_stats_2025_26.csv', lastDetails); });
+    document.getElementById('btnDownloadJSON').addEventListener('click',()=>{ if(lastJSON) downloadJSON('potm_stats_2025_26.json', lastJSON); });
 
-    // Prefill quick test
+    // quick test
     urlsEl.value=['https://www.fotmob.com/players/1467236/lamine-yamal','https://www.fotmob.com/players/1021382/joao-pedro'].join('\n');
   </script>
 </body>
