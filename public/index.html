@@ -124,11 +124,27 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
   // ---------- state & dom ----------
   const queued = new Map(); // url -> { name, url }
   const el = id => document.getElementById(id);
-  const csvFile = el('csvFile'), btnCsvAdd = el('btnCsvAdd'), btnCsvDefault = el('btnCsvDefault'), csvCount = el('csvCount');
-  const urlsTA = el('urls'), btnQueue = el('btnQueue'), btnClear = el('btnClear'), queuedList = el('queuedList'), queuedCount = el('queuedCount');
-  const btnRun = el('btnRun'), status = el('status'), kpiPlayers = el('kpiPlayers'), kpiMatches = el('kpiMatches'), kpiChecked = el('kpiChecked'), logBox = el('log');
-  const tbody = el('tbody'), summary = el('summary');
-  const btnDownloadCSV = el('btnDownloadCSV'), btnDownloadJSON = el('btnDownloadJSON'), btnDownloadRowsCsv = el('btnDownloadRowsCsv'), btnDownloadRowsJson = el('btnDownloadRowsJson');
+  const csvFile = el('csvFile');
+  const btnCsvAdd = el('btnCsvAdd');
+  const btnCsvDefault = el('btnCsvDefault');
+  const csvCount = el('csvCount');
+  const urlsTA = el('urls');
+  const btnQueue = el('btnQueue');
+  const btnClear = el('btnClear');
+  const queuedList = el('queuedList');
+  const queuedCount = el('queuedCount');
+  const btnRun = el('btnRun');
+  const status = el('status');
+  const kpiPlayers = el('kpiPlayers');
+  const kpiMatches = el('kpiMatches');
+  const kpiChecked = el('kpiChecked');
+  const logBox = el('log');
+  const tbody = el('tbody');
+  const summary = el('summary');
+  const btnDownloadCSV = el('btnDownloadCSV');
+  const btnDownloadJSON = el('btnDownloadJSON');
+  const btnDownloadRowsCsv = el('btnDownloadRowsCsv');
+  const btnDownloadRowsJson = el('btnDownloadRowsJson');
 
   // ---------- utils ----------
   const escapeHtml = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -203,36 +219,34 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
   }
 
   // CSV: upload or /players.csv
-  const btnCsvAdd = document.getElementById('btnCsvAdd');
-  const csvFile = document.getElementById('csvFile');
   btnCsvAdd.addEventListener('click', async ()=>{
-    if(!csvFile.files || !csvFile.files[0]){ document.getElementById('csvCount').textContent = 'No file selected'; return; }
+    if(!csvFile.files || !csvFile.files[0]){ csvCount.textContent = 'No file selected'; return; }
     const text = await csvFile.files[0].text();
     const items = parseCsv(text);
     const added = addPlayers(items);
-    document.getElementById('csvCount').textContent = added ? `Loaded ${added} from CSV` : 'No valid rows';
+    csvCount.textContent = added ? `Loaded ${added} from CSV` : 'No valid rows';
   });
-  document.getElementById('btnCsvDefault').addEventListener('click', async ()=>{
+  btnCsvDefault.addEventListener('click', async ()=>{
     try{
       const res = await fetch('players.csv', { cache: 'no-store' });
-      if(!res.ok){ document.getElementById('csvCount').textContent = 'players.csv not found'; return; }
+      if(!res.ok){ csvCount.textContent = 'players.csv not found'; return; }
       const txt = await res.text();
       const items = parseCsv(txt);
       const added = addPlayers(items);
-      document.getElementById('csvCount').textContent = added ? `Loaded ${added} from /players.csv` : 'No valid rows in /players.csv';
-    }catch(e){ document.getElementById('csvCount').textContent = 'Error loading /players.csv'; }
+      csvCount.textContent = added ? `Loaded ${added} from /players.csv` : 'No valid rows in /players.csv';
+    }catch(e){ csvCount.textContent = 'Error loading /players.csv'; }
   });
 
   // Paste
-  document.getElementById('btnQueue').addEventListener('click', ()=>{
-    const text = document.getElementById('urls').value || '';
+  btnQueue.addEventListener('click', ()=>{
+    const text = urlsTA.value || '';
     const rows = parseCsv(text);
     const loneUrls = text.split('\n').map(s=>normalizeUrl(s.trim())).filter(isPlayerUrl).map(url=>({ name:'', url }));
     const items = rows.concat(loneUrls);
     const added = addPlayers(items);
     log(`Added ${added} players from paste.`);
   });
-  document.getElementById('btnClear').addEventListener('click', ()=>{ queued.clear(); refreshQueuedUI(); log('Cleared queued players.'); });
+  btnClear.addEventListener('click', ()=>{ queued.clear(); refreshQueuedUI(); log('Cleared queued players.'); });
 
   // API calls (unchanged)
   async function discover(urls){
@@ -272,7 +286,6 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
   }
 
   function renderTable(totals){
-    const tbody = document.getElementById('tbody');
     tbody.innerHTML = '';
     for(const t of totals){
       const tr = document.createElement('tr');
@@ -309,7 +322,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     });
   }
 
-  // ---------- NEW: robust join logic (URL + playerId fallback) ----------
+  // robust join (URL + playerId fallback)
   function buildMapsFromDiscover(discPlayers){
     const byUrl = new Map();
     const byId  = new Map();
@@ -330,13 +343,13 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
   }
 
   // Run flow
-  document.getElementById('btnRun').addEventListener('click', async ()=>{
+  btnRun.addEventListener('click', async ()=>{
     setStatus('Running…'); log('Starting…');
 
     const players = Array.from(queued.values());
     if(players.length===0){ log('No players queued.'); setStatus('Idle'); return; }
 
-    document.getElementById('kpiPlayers').textContent = `Players: ${players.length}`;
+    kpiPlayers.textContent = `Players: ${players.length}`;
     const urls = players.map(p=>p.url);
 
     const disc = await discover(urls);
@@ -349,7 +362,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     const { byUrl, byId } = buildMapsFromDiscover(disc.players || []);
     let totalMatches = 0;
     for(const v of byUrl.values()) totalMatches += v.match_urls.length;
-    document.getElementById('kpiMatches').textContent = `Matches found: ${totalMatches}`;
+    kpiMatches.textContent = `Matches found: ${totalMatches}`;
     log(`Matches found: ${totalMatches}`);
 
     let checkedCount = 0;
@@ -360,7 +373,6 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
       const idStr = playerIdFromUrl(norm);
       let d = byUrl.get(norm) || (idStr ? byId.get(idStr) : null);
       if(!d){
-        // still nothing: create a placeholder so name is preserved in logs/UI
         d = { match_urls: [], player_id: idStr ? Number(idStr) : null, name: p.name, url: norm };
       }
       const matches = d.match_urls || [];
@@ -368,7 +380,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
       const rows = await poolLimit(5, matches, async (mUrl)=>{
         const r = await check(mUrl, d.player_id, d.name || '');
         checkedCount++;
-        if(checkedCount % 3 === 0) document.getElementById('kpiChecked').textContent = `Checked: ${checkedCount}`;
+        if(checkedCount % 3 === 0) kpiChecked.textContent = `Checked: ${checkedCount}`;
         return r;
       });
 
@@ -409,7 +421,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
       }
     }
 
-    document.getElementById('btnDownloadCSV').onclick = ()=>{
+    btnDownloadCSV.onclick = ()=>{
       const lines = ['player_name,player_url,checked,potm,goals,npg,pg,assists,yc,rc,fmp'];
       for(const t of totals){
         lines.push([
@@ -418,15 +430,15 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
       }
       download('totals.csv', lines.join('\n'), 'text/csv');
     };
-    document.getElementById('btnDownloadJSON').onclick = ()=> download('totals.json', JSON.stringify({ totals }, null, 2), 'application/json');
+    btnDownloadJSON.onclick = ()=> download('totals.json', JSON.stringify({ totals }, null, 2), 'application/json');
 
-    document.getElementById('btnDownloadRowsCsv').onclick = ()=>{
+    btnDownloadRowsCsv.onclick = ()=>{
       const headers = Object.keys(rowsFlat[0] || {player_name:'',player_url:'',match_url:'',match_title:'',league_label:'',match_datetime_utc:'',potm:'',rating:'',goals:'',pg:'',npg:'',assists:'',yc:'',rc:'',fmp:''});
       const lines = [ headers.join(',') ];
       for(const r of rowsFlat){ lines.push(headers.map(h=>csvEscape(r[h])).join(',')); }
       download('rows.csv', lines.join('\n'), 'text/csv');
     };
-    document.getElementById('btnDownloadRowsJson').onclick = ()=> download('rows.json', JSON.stringify(rowsFlat, null, 2), 'application/json');
+    btnDownloadRowsJson.onclick = ()=> download('rows.json', JSON.stringify(rowsFlat, null, 2), 'application/json');
 
     setStatus('Done');
   });
