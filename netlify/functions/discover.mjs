@@ -1,15 +1,22 @@
 // netlify/functions/discover.mjs
-// Robust discovery of 2025–26 Top-5 domestic league match URLs for player profile URLs,
-// filtered to matches that have ALREADY KICKED OFF (<= now) to avoid huge lists early in the season.
+// Discovery of 2025–26 Top-5 domestic league match URLs for player profile URLs,
+// with anchored-ID enrichment via /api/matchDetails so we can keep only valid,
+// already-played league fixtures.
 
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1));                // 2025-07-01
-const SEASON_END   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59));   // 2026-06-30
-const NOW          = new Date();                                    // keep only matches <= NOW
+const SEASON_END   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59));   // 2026-06-30 23:59:59
+const NOW          = new Date();                                    // keep only matches that have kicked off
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36";
 const HDRS_HTML = {
   accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "user-agent": UA,
+  referer: "https://www.fotmob.com/",
+  "accept-language": "en-GB,en;q=0.9"
+};
+const HDRS_JSON = {
+  accept: "application/json",
   "user-agent": UA,
   referer: "https://www.fotmob.com/",
   "accept-language": "en-GB,en;q=0.9"
@@ -34,6 +41,8 @@ function inSeasonPast(iso){
   return d >= SEASON_START && d <= SEASON_END && d <= NOW;
 }
 
+function unique(arr){ return Array.from(new Set(arr)); }
+
 async function fetchText(url, retry=2){
   let last;
   for(let i=0;i<=retry;i++){
@@ -45,8 +54,21 @@ async function fetchText(url, retry=2){
       return { finalUrl: res.url || url, html };
     }catch(e){ last = e; await sleep(200 + 250*i); }
   }
-  throw last || new Error("fetch failed");
+  throw last || new Error("fetch failed (html)");
 }
+async function fetchJSON(url, retry=2){
+  let last;
+  for(let i=0;i<=retry;i++){
+    try{
+      const res = await fetch(url, { headers: HDRS_JSON, redirect:"follow" });
+      const txt = await res.text();
+      if(!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} :: ${txt?.slice(0,160) || ""}`);
+      return JSON.parse(txt);
+    }catch(e){ last = e; await sleep(250 + 300*i); }
+  }
+  throw last || new Error("fetch failed (json)");
+}
+
 function nextDataStr(html){
   const m = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
   return m ? m[1] : null;
@@ -66,7 +88,6 @@ function* walk(root){
     }
   }
 }
-function unique(arr){ return Array.from(new Set(arr)); }
 
 function parsePlayerIdFromUrl(url){
   try{
@@ -77,12 +98,10 @@ function parsePlayerIdFromUrl(url){
 }
 
 function discoverMatchesFromNextData(root){
-  // Traverse arrays that look like match/fixture lists and pull (matchId, leagueId, kickoff ISO).
   const matches = [];
   let playerId = null, playerName = null, teamId = null, teamSlug = null;
 
   for (const node of walk(root)){
-    // learn player/team
     if (playerId == null && (node?.playerId != null || node?.id != null) && (node?.fullName || node?.name)) {
       playerId = asNum(node?.playerId ?? node?.id) ?? playerId;
       playerName = (node?.fullName || node?.name || playerName || null);
@@ -116,22 +135,20 @@ function discoverMatchesFromNextData(root){
   return { matches, playerId, playerName, teamId, teamSlug };
 }
 
-// STRICT filter: must have leagueId in Top-5 AND a valid kickoff within the 2025–26 window AND <= now.
 function filterTop5SeasonPast(list){
   const out = [];
   for (const m of list){
     const lid = Number(m.leagueId);
     if (!Number.isFinite(lid) || !TOP5_LEAGUE_IDS.has(lid)) continue;
-    if (!m.iso) continue;           // require a real kickoff timestamp
+    if (!m.iso) continue;            // must have kickoff
     if (!inSeasonPast(m.iso)) continue;
     out.push(m);
   }
   return out;
 }
-
 function buildMatchUrls(listOrIds){
   const ids = Array.isArray(listOrIds)
-    ? unique(listOrIds.map(x => typeof x === "string" || typeof x === "number" ? String(x) : String(x.matchId)))
+    ? [...new Set(listOrIds.map(x => typeof x === "string" || typeof x === "number" ? String(x) : String(x.matchId)))]
     : [];
   return ids.filter(Boolean).map(id => `https://www.fotmob.com/match/${id}`);
 }
@@ -145,12 +162,50 @@ async function getNextData(url){
   return { next: obj, html, finalUrl };
 }
 
+async function enrichAnchorIds(ids, teamId){
+  // probe a limited number to avoid rate limits
+  const MAX_PROBE = 48;
+  const toProbe = [...new Set(ids)].slice(0, MAX_PROBE);
+  const CONC = 3;
+
+  const queue = [...toProbe];
+  const out = [];
+  const work = async (mid) => {
+    try{
+      const j = await fetchJSON(`https://www.fotmob.com/api/matchDetails?matchId=${mid}`);
+      // extract leagueId, kickoff, teams
+      let leagueId = null, iso = null, hId = null, aId = null;
+      try{
+        leagueId = asNum(j?.general?.leagueId ?? j?.leagueId ?? j?.tournamentId ?? j?.competitionId);
+        const ts = j?.general?.matchTimeUTC || j?.general?.startTimeUTC || j?.matchTimeUTC || j?.startTimeUTC;
+        iso = toISO(ts);
+        hId = asNum(j?.general?.homeTeam?.id ?? j?.homeTeam?.id);
+        aId = asNum(j?.general?.awayTeam?.id ?? j?.awayTeam?.id);
+      }catch{}
+      if (!Number.isFinite(leagueId) || !TOP5_LEAGUE_IDS.has(leagueId)) return;
+      if (!iso || !inSeasonPast(iso)) return;
+      if (Number.isFinite(teamId) && !(hId===teamId || aId===teamId)) return;
+      out.push({ matchId: Number(mid), leagueId, iso });
+    }catch(_e){ /* ignore bad ids */ }
+  };
+
+  const runners = new Array(CONC).fill(0).map(async ()=> {
+    while(queue.length){
+      const id = queue.shift();
+      await work(id);
+      await sleep(120);
+    }
+  });
+  await Promise.all(runners);
+  return out;
+}
+
 async function discoverForPlayerUrl(playerUrl){
   const debug = {
     used: [],
     player_page: { next_matches: 0, kept: 0, errors: [] },
     team_pages:  { attempts: 0, next_matches: 0, kept: 0, errors: [] },
-    anchors:     { found: 0, kept: 0 },
+    anchors:     { found: 0, probed: 0, kept: 0 },
   };
 
   let player_id = parsePlayerIdFromUrl(playerUrl);
@@ -175,17 +230,23 @@ async function discoverForPlayerUrl(playerUrl){
     debug.player_page.kept += kept.length;
     matches = matches.concat(kept);
 
-    // raw anchors -> keep only if we can later enrich dates (we can't here), so we drop them by default.
-    // (We still record how many anchors existed for debugging.)
+    // collect anchors for enrichment fallback
     const ids = Array.from(html.matchAll(/\/match\/(\d{5,10})/g)).map(m=>m[1]);
     debug.anchors.found = ids.length;
-    // We do not use anchors now because they lack reliable league/date metadata
-    // and previously caused over-collection.
+
+    // Only run enrichment if we still have few/zero matches
+    if (matches.length === 0 && ids.length){
+      const enriched = await enrichAnchorIds(ids, team_id ?? null);
+      debug.used.push("anchors_enriched");
+      debug.anchors.probed = Math.min(48, ids.length);
+      debug.anchors.kept = enriched.length;
+      matches = matches.concat(enriched);
+    }
   }catch(e){
     debug.player_page.errors.push(String(e));
   }
 
-  // 2) Team fixtures/matches pages (if we know team)
+  // 2) Team fixtures/matches pages (if we know team) — adds more dated matches
   if (team_id){
     const tryUrls = [];
     const base = `https://www.fotmob.com/teams/${team_id}`;
