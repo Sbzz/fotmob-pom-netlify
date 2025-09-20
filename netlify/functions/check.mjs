@@ -1,6 +1,10 @@
 // netlify/functions/check.mjs
-// Fixes PG/NPG and RC via event dedup + strict penalty detection + sane clamps.
-// Leaves discovery, POTM, FMP, assists, league/season filters, fixture key, and UI contract unchanged.
+// Stable checker with:
+// - Robust POTM/FMP/assists parsing
+// - YC/RC extraction (booking/card nested shapes)
+// - PG/NPG via dedup across event arrays + shotmap fallback + sane clamps
+// - Top-5 + season window filters
+// - NEW: leagueId-by-name fallback + soft kickoff fallback to avoid "all zeros"
 
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1));                // 2025-07-01
@@ -73,6 +77,23 @@ function mkFixtureKey(leagueId, iso, hId, aId, hName, aName){
   return `L${lid}|${t}|${H}|${A}`;
 }
 
+// ---------- League name → id fallback (prevents "all zeros" when id is omitted) ----------
+const NAME_TO_LEAGUE_ID = {
+  "premier league": 47,
+  "la liga": 87, "laliga": 87,
+  "bundesliga": 54,
+  "serie a": 55,
+  "ligue 1": 53
+};
+function coerceLeagueIdByName(name){
+  if(!name) return null;
+  const n = String(name).toLowerCase();
+  for (const key in NAME_TO_LEAGUE_ID) {
+    if (n.includes(key)) return NAME_TO_LEAGUE_ID[key];
+  }
+  return null;
+}
+
 // ---------- FotMob general / potm / player node ----------
 function extractGeneral(root){
   let leagueId=null, leagueName=null, iso=null, title=null, mid=null;
@@ -86,11 +107,11 @@ function extractGeneral(root){
   };
 
   for(const node of walk(root)){
-    const g = node?.general || node?.overview?.general || node?.match?.general || null;
+    const g = node?.general || node?.overview?.general || node?.match?.general || node?.matchFacts?.general || null;
     if(!g) continue;
     leagueId   = (leagueId!==null && leagueId!==undefined) ? leagueId : asNum(g.leagueId || g.tournamentId || g.competitionId);
     leagueName = leagueName || (g.leagueName || g.tournamentName || g.competitionName || g?.league?.name || g?.tournament?.name || g?.competition?.name);
-    iso        = iso || toISO(g.matchTimeUTC || g.startTimeUTC || g?.kickoff?.utc || g.dateUTC);
+    iso        = iso || toISO(g.matchTimeUTC || g.startTimeUTC || g?.kickoff?.utc || g.dateUTC || g.startTime || g.date);
     title      = title || (g.pageTitle || g.matchName || g.title);
     mid        = (mid!==null && mid!==undefined) ? mid : asNum(g.matchId || g.id);
     setTeams(g);
@@ -196,27 +217,21 @@ function extractFromEvents(root, playerId, playerName){
   const tName = normName(playerName||'');
 
   const val = (x)=> (x===null || x===undefined) ? '' : String(x).toLowerCase();
-  const num = (x)=> (x===null || x===undefined) ? null : Number(x);
 
   const minuteOf = (e)=>{
-    return num(e?.minute) ??
-           num(e?.time) ??
-           num(e?.clock?.minute) ??
-           num(e?.timeMin) ??
-           num(e?.min) ??
-           null;
+    const arr = [e?.minute, e?.time, e?.clock?.minute, e?.timeMin, e?.min];
+    for(const v of arr){ if(v !== null && v !== undefined) return Number(v); }
+    return null;
   };
   const secondOf = (e)=>{
-    return num(e?.second) ??
-           num(e?.clock?.second) ??
-           num(e?.timeSec) ??
-           null;
+    const arr = [e?.second, e?.clock?.second, e?.timeSec];
+    for(const v of arr){ if(v !== null && v !== undefined) return Number(v); }
+    return null;
   };
   const playerIdOf = (e)=>{
-    return asNum(
-      e?.player?.id || e?.playerId || e?.actor?.id || e?.participant?.id ||
-      e?.subject?.id || e?.player1Id || e?.playerId1
-    );
+    const arr = [e?.player?.id, e?.playerId, e?.actor?.id, e?.participant?.id, e?.subject?.id, e?.player1Id, e?.playerId1];
+    for(const v of arr){ const n = asNum(v); if(n !== null) return n; }
+    return null;
   };
   const playerNameOf = (e)=>{
     return e?.player?.name?.fullName || e?.playerName || e?.player || e?.actor?.name || e?.name || e?.subject?.name || e?.player1Name || '';
@@ -291,12 +306,9 @@ function extractFromEvents(root, playerId, playerName){
   };
 
   const eventId = (e)=>{
-    return String(
-      nz(asNum(e?.id), '') ||
-      nz(asNum(e?.eventId), '') ||
-      nz(asNum(e?.incidentId), '') ||
-      ''
-    );
+    const arr = [e?.id, e?.eventId, e?.incidentId];
+    for(const v of arr){ const n = asNum(v); if(n !== null) return String(n); }
+    return '';
   };
   const goalKey = (e, isPen)=>{
     const m = nz(minuteOf(e), -1);
@@ -354,12 +366,9 @@ function extractFromEvents(root, playerId, playerName){
         }
       }
 
-      // ASSISTS
-      // We keep your existing assist total policy (prefer stats unless missing),
-      // but counting here doesn't hurt since we use it as fallback only.
+      // ASSISTS (fallback only; main policy uses stats when present)
       const hasGoalShape = isGoalEvent(e) && !isOwnGoal(e);
       if(hasGoalShape){
-        // detect assists by presence of assisting player fields
         const aIds = [];
         const aNames = [];
         if (e?.assist) { aIds.push(asNum(e.assist.id)); aNames.push(e.assist?.name?.fullName || e.assistName); }
@@ -369,9 +378,6 @@ function extractFromEvents(root, playerId, playerName){
         if (e?.secondaryPlayerId!=null) aIds.push(asNum(e.secondaryPlayerId));
         if (Array.isArray(e?.assists)) for(const a of e.assists){ aIds.push(asNum(a?.id)); aNames.push(a?.name?.fullName||a?.name); }
         if (Array.isArray(e?.assistPlayers)) for(const a of e.assistPlayers){ aIds.push(asNum(a?.id)); aNames.push(a?.name?.fullName||a?.name); }
-        // if the *scorer* is our player, we don't increment assists here
-        // (Assist belongs to another player). We only increment if our
-        // player appears in the assist fields.
         const scorerIsMe = matchByPlayer(e);
         if(!scorerIsMe){
           const meById = (playerId && aIds.some(id => id===playerId));
@@ -402,7 +408,6 @@ function extractFromEvents(root, playerId, playerName){
     }
   }
 
-  // If a description explicitly says "second yellow", ensure at least one yellow is counted
   if(sawSecondYellowText && acc.yellow_cards===0) acc.yellow_cards = 1;
 
   return acc;
@@ -480,9 +485,22 @@ function extractFromShotmap(root, playerId, playerName){
 
 // ---------- Build per match ----------
 function buildResult({ matchUrl, general, potm, playerNode, playerId, playerName, next }){
-  const league_id   = asNum(general.leagueId);
+  // General fields
+  let league_id   = asNum(general.leagueId);
   const league_name = general.leagueName || null;
-  const iso         = general.iso || null;
+  let iso         = general.iso || null;
+
+  // Fallbacks to avoid "all zeros"
+  if ((league_id === null || league_id === undefined) && league_name) {
+    const coerced = coerceLeagueIdByName(league_name);
+    if (coerced != null) league_id = coerced;
+  }
+  if (!iso) {
+    for (const node of walk(next)) {
+      const k = node?.kickoff || node?.startTimeUTC || node?.matchTimeUTC || node?.dateUTC || node?.startTime || null;
+      if (k) { iso = toISO(k.utc || k); if (iso) break; }
+    }
+  }
 
   // 1) Base stats block
   const base = extractStatsFromStatsBlocks(playerNode);
@@ -498,30 +516,20 @@ function buildResult({ matchUrl, general, potm, playerNode, playerId, playerName
   const ev = extractFromEvents(next, playerId, playerName);
   const sm = extractFromShotmap(next, playerId, playerName);
 
-  // ---- Merge policy ----
-  // Goals overall
+  // Merge policy
   let goals = Number.isFinite(goals_stat) ? goals_stat : (ev.goals || sm.goals || 0);
-
-  // PG: prefer events; then shotmap; then stats
   let pg = (ev.penalty_goals > 0 ? ev.penalty_goals :
            (sm.penalty_goals > 0 ? sm.penalty_goals :
            (Number.isFinite(pg_stat) ? pg_stat : 0)));
+  if(pg > goals) pg = goals; // clamp PG ≤ Goals
 
-  // Ensure PG never exceeds goals
-  if(pg > goals) pg = goals;
-
-  // Assists: keep stats unless missing -> use events
   let assists = ast || ev.assists || 0;
 
-  // Cards: prefer events; then facts/bookings; then stats
   const facts = extractCardsFromFacts(next, playerId, playerName);
   let yc = (ev.yellow_cards > 0 ? ev.yellow_cards : (facts.yellow > 0 ? facts.yellow : (Number.isFinite(yc_stat) ? yc_stat : 0)));
   let rc = (ev.red_cards    > 0 ? ev.red_cards    : (facts.red    > 0 ? facts.red    : (Number.isFinite(rc_stat) ? rc_stat : 0)));
+  if(rc > 1) rc = 1; // clamp max 1 send-off
 
-  // Clamp RC to max 1 (sent off once)
-  if(rc > 1) rc = 1;
-
-  // Minutes → FMP
   const fmp = clampInt(mins) >= 90;
 
   // POTM flag
