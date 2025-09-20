@@ -121,7 +121,6 @@
     const resolveName = (player) => {
       const a=(player?.player_name||'').trim();
       if(a) return a;
-      // scan raw rows for first echo name
       for(const r of (player?.raw||[])){
         if(r && r.echo_player_name){ const n=String(r.echo_player_name).trim(); if(n) return n; }
       }
@@ -129,6 +128,7 @@
     };
     const pidFromUrl=(u)=>{ const m=(u||'').match(/\/players\/(\d+)(?:\/|$)/); return m?Number(m[1]):null; };
 
+    // aggregate (skip errored rows)
     function aggregate(rows){
       const ok=(rows||[]).filter(r=>r && !r.error);
       const acc={goals:0,npg:0,pg:0,assists:0,yc:0,rc:0,fmp:0,potm:0,checked:0};
@@ -136,13 +136,13 @@
         const s=r.player_stats||{};
         acc.checked+=1;
         if(r.player_is_pom) acc.potm+=1;
-        acc.goals+=Number(s.goals||0);
-        acc.pg+=Number(s.penalty_goals||0);
-        acc.npg+=Math.max(0, Number(s.goals||0)-Number(s.penalty_goals||0));
-        acc.assists+=Number(s.assists||0);
-        acc.yc+=Number(s.yellow_cards||0);
-        acc.rc+=Number(s.red_cards||0);
-        acc.fmp+=(s.full_match_played?1:0);
+        acc.goals += Number(s.goals||0);
+        acc.pg    += Number(s.penalty_goals||0);
+        acc.npg   += Math.max(0, Number(s.goals||0)-Number(s.penalty_goals||0));
+        acc.assists += Number(s.assists||0);
+        acc.yc += Number(s.yellow_cards||0);
+        acc.rc += Number(s.red_cards||0);
+        acc.fmp += (s.full_match_played?1:0);
       }
       for(const k of Object.keys(acc)) acc[k]=Math.trunc(acc[k]);
       return acc;
