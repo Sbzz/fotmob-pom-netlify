@@ -1,14 +1,11 @@
 // netlify/functions/check.mjs
-// Check one match URL for a given player: POTM + key stats (Top-5 leagues, 2025–26 only)
+// Check one match URL for a given player (POTM + key stats) and emit a stable fixture fingerprint
 // Input (POST JSON): { matchUrl, playerId?, playerName? }
-// Output: { match_url, resolved_match_id, match_title, league_id, league_label, match_datetime_utc,
-//           league_allowed, within_season_2025_26, player_is_pom, player_rating, potm_name, potm_id,
-//           player_stats:{goals, penalty_goals, assists, yellow_cards, red_cards, full_match_played},
-//           echo_player_name, source: "next_html" }
+// Output: fields used by index.html (incl. fixture_key for de-dup)
 
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1));                // 2025-07-01
-const SEASON_END   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59));   // 2026-06-30 23:59:59
+const SEASON_END   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59));   // 2026-06-30
 const NOW          = new Date();
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36";
@@ -65,30 +62,47 @@ function* walk(root){
     }
   }
 }
-
 function normName(s){ return String(s||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim(); }
 
-// ---- Extraction helpers from __NEXT_DATA__ (match page) ----
+// Create a stable key for a fixture (minute precision)
+function mkFixtureKey(leagueId, iso, hId, aId, hName, aName){
+  const lid = leagueId ?? 'X';
+  const t   = (iso||'').slice(0,16); // YYYY-MM-DDTHH:MM
+  const H   = (hId!=null ? `H#${hId}` : `H@${(hName||'').toLowerCase()}`);
+  const A   = (aId!=null ? `A#${aId}` : `A@${(aName||'').toLowerCase()}`);
+  return `L${lid}|${t}|${H}|${A}`;
+}
+
+// ---- Extraction helpers from match __NEXT_DATA__ ----
 function extractGeneral(root){
   let leagueId=null, leagueName=null, iso=null, title=null, mid=null;
+  let hId=null, aId=null, hName=null, aName=null;
+
+  const setTeams = (g)=>{
+    const home = g?.homeTeam || g?.home || null;
+    const away = g?.awayTeam || g?.away || null;
+    if(home){ hId = hId ?? asNum(home.id); hName = hName ?? (home.name || home.teamName || home.shortName || null); }
+    if(away){ aId = aId ?? asNum(away.id); aName = aName ?? (away.name || away.teamName || away.shortName || null); }
+  };
+
   for(const node of walk(root)){
-    const g = node?.general || node?.overview?.general || null;
+    const g = node?.general || node?.overview?.general || node?.match?.general || null;
     if(!g) continue;
-    leagueId  = leagueId  ?? asNum(g.leagueId ?? g.tournamentId ?? g.competitionId);
-    leagueName= leagueName?? (g.leagueName ?? g.tournamentName ?? g.competitionName ?? g?.league?.name ?? g?.tournament?.name ?? g?.competition?.name);
-    iso       = iso       ?? toISO(g.matchTimeUTC ?? g.startTimeUTC ?? g.kickoff?.utc ?? g.dateUTC);
-    title     = title     ?? (g.pageTitle || g.matchName || g.title);
-    mid       = mid       ?? asNum(g.matchId ?? g.id);
-    if(leagueId && iso && title) break;
+    leagueId   = leagueId   ?? asNum(g.leagueId ?? g.tournamentId ?? g.competitionId);
+    leagueName = leagueName ?? (g.leagueName ?? g.tournamentName ?? g.competitionName ?? g?.league?.name ?? g?.tournament?.name ?? g?.competition?.name);
+    iso        = iso        ?? toISO(g.matchTimeUTC ?? g.startTimeUTC ?? g.kickoff?.utc ?? g.dateUTC);
+    title      = title      ?? (g.pageTitle || g.matchName || g.title);
+    mid        = mid        ?? asNum(g.matchId ?? g.id);
+    setTeams(g);
+    if(leagueId && iso && (hId||hName) && (aId||aName)) break;
   }
-  // Fallbacks
   if(!title){
     for(const node of walk(root)){ if(node?.seo?.title){ title=node.seo.title; break; } }
   }
   if(!mid){
     for(const node of walk(root)){ if(asNum(node?.matchId)){ mid=asNum(node.matchId); break; } }
   }
-  return { leagueId, leagueName, iso, title, matchId: mid };
+  return { leagueId, leagueName, iso, title, matchId: mid, hId, aId, hName, aName };
 }
 
 function extractPOTM(root){
@@ -125,7 +139,6 @@ function findPlayerNode(root, playerId, playerName){
   const targetName = normName(playerName||'');
   let exactById=null, bestByName=null;
   for(const node of walk(root)){
-    // many nodes carry id + name + stats for a player
     const id = asNum(node?.id ?? node?.playerId);
     const full = node?.name?.fullName || node?.name || null;
     const hasStats = Array.isArray(node?.stats) && node.stats.length>0;
@@ -138,7 +151,6 @@ function findPlayerNode(root, playerId, playerName){
 }
 
 function extractStatsFromStatsBlocks(node){
-  // node.stats is an array of sections: [{title, key, stats:{ label: {key, stat:{value,type}} }}]
   const acc = { goals:0, penalty_goals:0, assists:0, yellow_cards:0, red_cards:0, minutes_played:0, rating:null };
   if(!node || !Array.isArray(node.stats)) return acc;
 
@@ -156,7 +168,6 @@ function extractStatsFromStatsBlocks(node){
   const rating = pick(["FotMob rating","Rating","Match rating"]);
   const mins   = pick(["Minutes played","Minutes","Time played"]);
   const goals  = pick(["Goals","Total goals"]);
-  // Penalties can be named differently
   const pg     = pick(["Penalty goals","Penalties scored","Scored penalties","Penalty Goals"]);
   const ast    = pick(["Assists","Total assists"]);
   const yc     = pick(["Yellow cards","Yellow Cards","YC"]);
@@ -174,33 +185,26 @@ function extractStatsFromStatsBlocks(node){
 }
 
 function buildResult(payload){
-  const {
-    matchUrl, general, potm, playerNode, playerId, playerName
-  } = payload;
-
+  const { matchUrl, general, potm, playerNode, playerId, playerName } = payload;
   const league_id   = asNum(general.leagueId);
   const league_name = general.leagueName || null;
   const iso         = general.iso || null;
   const allowed     = league_id!=null && TOP5_LEAGUE_IDS.has(league_id);
   const within      = !!iso && inSeason(iso) && (new Date(iso) <= NOW);
 
-  // Player stats
   let stats = { goals:0, penalty_goals:0, assists:0, yellow_cards:0, red_cards:0, minutes_played:0, rating:null };
-  if(playerNode){
-    stats = extractStatsFromStatsBlocks(playerNode);
-  }
+  if(playerNode){ stats = extractStatsFromStatsBlocks(playerNode); }
+  const fmp = stats.minutes_played >= 90;
 
-  const fmp = stats.minutes_played >= 90; // full match played
-  const npg = Math.max(0, clampInt(stats.goals) - clampInt(stats.penalty_goals));
-
-  // POTM flag for the target player
   const pid = asNum(playerId);
   const player_is_pom =
-    !!potm &&
-    (
-      (pid && potm.id && pid === potm.id) ||
-      (!pid && potm.name && normName(potm.name) === normName(playerName||''))
-    );
+    !!potm && ((pid && potm.id && pid === potm.id) || (!pid && potm.name && normName(potm.name) === normName(playerName||'')));
+
+  const fixture_key = mkFixtureKey(
+    league_id, iso,
+    general.hId, general.aId,
+    general.hName, general.aName
+  );
 
   return {
     match_url: matchUrl,
@@ -215,6 +219,14 @@ function buildResult(payload){
     player_rating: stats.rating!=null ? Number(stats.rating) : null,
     potm_name: potm?.name ? { fullName: potm.name } : null,
     potm_id: potm?.id ?? null,
+
+    // NEW: team identity for de-dupe
+    home_team_id: general.hId ?? null,
+    home_team_name: general.hName ?? null,
+    away_team_id: general.aId ?? null,
+    away_team_name: general.aName ?? null,
+    fixture_key,
+
     player_stats: {
       goals: clampInt(stats.goals),
       penalty_goals: clampInt(stats.penalty_goals),
@@ -241,33 +253,21 @@ export async function handler(event){
     const playerName = String(body.playerName||"").trim();
     if(!/\/match\/\d+/.test(matchUrl)) return resp(200,{ error:"Provide matchUrl like https://www.fotmob.com/match/123456" });
 
-    // Fetch + parse NEXT_DATA
     const { html } = await fetchText(matchUrl);
     const s = nextDataStr(html);
     if(!s) return resp(200, { error:"NEXT_DATA not found" });
     const next = safeJSON(s);
     if(!next) return resp(200, { error:"NEXT_DATA JSON parse failed" });
 
-    // General (league/time/title/id)
     const general = extractGeneral(next);
-    if(!general.leagueId || !general.iso){
-      // Even if general is partial, return a minimal shell for visibility
-    }
-
-    // POTM
     const potm = extractPOTM(next) || null;
 
-    // Player node with stats
     let node = null;
     if(playerId || playerName){
       node = findPlayerNode(next, playerId||null, playerName||null);
-    } else {
-      // Try to infer a "main" player in case caller only pasted matchUrl
-      node = null;
     }
 
     const out = buildResult({ matchUrl, general, potm, playerNode: node, playerId, playerName });
-
     return resp(200, out);
 
   }catch(e){
