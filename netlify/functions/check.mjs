@@ -1,7 +1,7 @@
 // netlify/functions/check.mjs
 // Keeps your existing FotMob logic for: POTM, FMP, assists, discovery, de-dup.
 // Adds secondary source (SofaScore) ONLY to improve: Penalty goals (PG) & Yellow/Red cards.
-// If SofaScore can't be matched (rate-limit/blocked/different slug), we keep the FotMob numbers.
+// Also removes all "??" usage to avoid bundler error with "||".
 
 // ======= CONFIG =======
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
@@ -9,8 +9,11 @@ const SEASON_START = new Date(Date.UTC(2025, 6, 1));                // 2025-07-0
 const SEASON_END   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59));   // 2026-06-30
 const NOW          = new Date();
 
+// helper to replace nullish coalescing (a ?? b)
+const nz = (v, fallback) => (v === null || v === undefined ? fallback : v);
+
 // Turn SofaScore augmentation on/off via env; defaults ON
-const USE_SOFASCORE = (process.env.USE_SOFASCORE ?? "1") !== "0";
+const USE_SOFASCORE = (nz(process.env.USE_SOFASCORE, "1") !== "0");
 
 // Shared headers
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36";
@@ -35,7 +38,7 @@ const clampInt = (v) => Number.isFinite(v) ? Math.max(0, Math.trunc(v)) : 0;
 
 // ======= UTILS =======
 function toISO(v){
-  if (!v) return null;
+  if (v === null || v === undefined) return null;
   const n = Number(v);
   if (Number.isFinite(n)) {
     const d = new Date(n > 1e12 ? n : n * 1000);
@@ -88,14 +91,14 @@ function* walk(root){
 function normName(s){ return String(s||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim(); }
 
 function mkFixtureKey(leagueId, iso, hId, aId, hName, aName){
-  const lid = leagueId ?? 'X';
-  const t   = (iso||'').slice(0,16); // YYYY-MM-DDTHH:MM
-  const H   = (hId!=null ? `H#${hId}` : `H@${(hName||'').toLowerCase()}`);
-  const A   = (aId!=null ? `A#${aId}` : `A@${(aName||'').toLowerCase()}`);
+  const lid = nz(leagueId, 'X');
+  const t   = (iso || '').slice(0,16); // YYYY-MM-DDTHH:MM
+  const H   = (hId !== null && hId !== undefined) ? `H#${hId}` : `H@${(hName||'').toLowerCase()}`;
+  const A   = (aId !== null && aId !== undefined) ? `A#${aId}` : `A@${(aName||'').toLowerCase()}`;
   return `L${lid}|${t}|${H}|${A}`;
 }
 
-// ======= FOTMOB PARSERS (your existing logic kept) =======
+// ======= FOTMOB PARSERS =======
 function extractGeneral(root){
   let leagueId=null, leagueName=null, iso=null, title=null, mid=null;
   let hId=null, aId=null, hName=null, aName=null;
@@ -103,18 +106,18 @@ function extractGeneral(root){
   const setTeams = (g)=>{
     const home = g?.homeTeam || g?.home || null;
     const away = g?.awayTeam || g?.away || null;
-    if(home){ hId = hId ?? asNum(home.id); hName = hName ?? (home.name || home.teamName || home.shortName || null); }
-    if(away){ aId = aId ?? asNum(away.id); aName = aName ?? (away.name || away.teamName || away.shortName || null); }
+    if(home){ hId = hId !== null && hId !== undefined ? hId : asNum(home.id); hName = hName || (home.name || home.teamName || home.shortName || null); }
+    if(away){ aId = aId !== null && aId !== undefined ? aId : asNum(away.id); aName = aName || (away.name || away.teamName || away.shortName || null); }
   };
 
   for(const node of walk(root)){
     const g = node?.general || node?.overview?.general || node?.match?.general || null;
     if(!g) continue;
-    leagueId   = leagueId   ?? asNum(g.leagueId ?? g.tournamentId ?? g.competitionId);
-    leagueName = leagueName ?? (g.leagueName ?? g.tournamentName ?? g.competitionName ?? g?.league?.name ?? g?.tournament?.name ?? g?.competition?.name);
-    iso        = iso        ?? toISO(g.matchTimeUTC ?? g.startTimeUTC ?? g.kickoff?.utc ?? g.dateUTC);
-    title      = title      ?? (g.pageTitle || g.matchName || g.title);
-    mid        = mid        ?? asNum(g.matchId ?? g.id);
+    leagueId   = leagueId !== null && leagueId !== undefined ? leagueId : asNum(g.leagueId || g.tournamentId || g.competitionId);
+    leagueName = leagueName || (g.leagueName || g.tournamentName || g.competitionName || (g?.league && g.league.name) || (g?.tournament && g.tournament.name) || (g?.competition && g.competition.name));
+    iso        = iso || toISO(g.matchTimeUTC || g.startTimeUTC || (g.kickoff && g.kickoff.utc) || g.dateUTC);
+    title      = title || (g.pageTitle || g.matchName || g.title);
+    mid        = mid !== null && mid !== undefined ? mid : asNum(g.matchId || g.id);
     setTeams(g);
     if(leagueId && iso && (hId||hName) && (aId||aName)) break;
   }
@@ -131,13 +134,12 @@ function extractPOTM(root){
   for(const node of walk(root)){
     const potm = node?.playerOfTheMatch || node?.potm || node?.manOfTheMatch;
     if(potm && (potm.id || potm.playerId || potm.name)){
-      const id = asNum(potm.id ?? potm.playerId);
-      const nm = potm.name?.fullName || potm.name || (potm.firstName && potm.lastName ? `${potm.firstName} ${potm.lastName}` : null);
-      const ratingNum = asNum(potm.rating?.num ?? potm.rating);
+      const id = asNum(potm.id || potm.playerId);
+      const nm = (potm.name && (potm.name.fullName || potm.name)) || (potm.firstName && potm.lastName ? `${potm.firstName} ${potm.lastName}` : null);
+      const ratingNum = asNum((potm.rating && potm.rating.num) || potm.rating);
       return { id, name: nm, rating: ratingNum };
     }
   }
-  // Fallback: top rating & finished
   let best = null;
   for(const node of walk(root)){
     if(!node?.rating) continue;
@@ -145,8 +147,8 @@ function extractPOTM(root){
     const finished = node?.rating?.isTop?.isMatchFinished;
     if(!isTop || !finished) continue;
     const cand = {
-      id: asNum(node.id ?? node.playerId),
-      name: node?.name?.fullName || node?.name || null,
+      id: asNum(node.id || node.playerId),
+      name: (node?.name && (node.name.fullName || node.name)) || null,
       rating: asNum(node?.rating?.num)
     };
     if(cand.id || cand.name){
@@ -160,8 +162,8 @@ function findPlayerNode(root, playerId, playerName){
   const targetName = normName(playerName||'');
   let exactById=null, bestByName=null, withMinutes=null;
   for(const node of walk(root)){
-    const id = asNum(node?.id ?? node?.playerId);
-    const full = node?.name?.fullName || node?.name || null;
+    const id = asNum(node?.id || node?.playerId);
+    const full = (node?.name && (node.name.fullName || node.name)) || null;
 
     if(node?.minutesPlayed!=null && (id===playerId || (full && normName(full)===targetName))){
       withMinutes = withMinutes || node;
@@ -180,14 +182,14 @@ function extractStatsFromStatsBlocks(node){
   const acc = { goals:null, penalty_goals:null, assists:null, yellow_cards:null, red_cards:null, minutes_played:null, rating:null };
   if(!node) return acc;
   if(Number.isFinite(Number(node.minutesPlayed))) acc.minutes_played = Number(node.minutesPlayed);
-  if(node?.rating?.num!=null && Number.isFinite(Number(node.rating.num))) acc.rating = Number(node.rating.num);
+  if(node?.rating && node.rating.num!=null && Number.isFinite(Number(node.rating.num))) acc.rating = Number(node.rating.num);
 
   if(!Array.isArray(node.stats)) return acc;
   const pick = (labels) => {
     for(const lab of labels){
       for(const section of node.stats){
         const m = section?.stats?.[lab];
-        const v = m?.stat?.value ?? m?.value ?? m;
+        const v = (m && (m.stat && m.stat.value)) || (m && m.value) || m;
         if(v!=null) return Number(v);
       }
     }
@@ -223,38 +225,36 @@ function approxSameTeam(a,b){
 }
 
 async function findSofaEventId({ homeName, awayName, iso }){
-  // Query by teams; then filter by kickoff proximity ±12h and by both team names.
   const q = encodeURIComponent(`${homeName} ${awayName}`);
   const url = `https://api.sofascore.com/api/v1/search/all?q=${q}`;
   const { json } = await fetchJSON(url, SOFA_HDRS);
   const ts = Math.floor(new Date(iso).getTime()/1000);
   const lo = ts - 12*3600, hi = ts + 12*3600;
 
-  const events = json?.events || json?.results?.events || [];
+  const events = (json && (json.events || (json.results && json.results.events))) || [];
   let best = null, bestScore = -1;
 
   for(const ev of events){
-    const start = asNum(ev?.startTimestamp);
+    const start = asNum(ev && ev.startTimestamp);
     if(!start || start < lo || start > hi) continue;
 
-    const hn = ev?.homeTeam?.name || ev?.homeTeam?.shortName || '';
-    const an = ev?.awayTeam?.name || ev?.awayTeam?.shortName || '';
+    const hn = (ev && ev.homeTeam && (ev.homeTeam.name || ev.homeTeam.shortName)) || '';
+    const an = (ev && ev.awayTeam && (ev.awayTeam.name || ev.awayTeam.shortName)) || '';
     if(!hn || !an) continue;
 
     const teamHit = (approxSameTeam(hn, homeName) && approxSameTeam(an, awayName)) ||
                     (approxSameTeam(hn, awayName) && approxSameTeam(an, homeName));
     if(!teamHit) continue;
 
-    // score by closeness in time + exact-ish match bonus
     let score = 0;
-    score += 10 - Math.min(10, Math.abs(start - ts)/600); // up to 10 points
+    score += 10 - Math.min(10, Math.abs(start - ts)/600);
     if(approxSameTeam(hn, homeName)) score += 2;
     if(approxSameTeam(an, awayName)) score += 2;
 
     if(score > bestScore){ bestScore = score; best = ev; }
   }
 
-  return best?.id ?? null;
+  return best && best.id ? best.id : null;
 }
 
 async function sofaIncidentsToCounts(sofaEventId, playerName){
@@ -262,20 +262,19 @@ async function sofaIncidentsToCounts(sofaEventId, playerName){
   const tName = normName(playerName);
 
   const matchPlayer = (obj)=>{
-    const nm = obj?.player?.name || obj?.playerName || obj?.playerShortName || obj?.playerSlug || obj?.player ?? null;
+    const nm = (obj && (obj.player && obj.player.name)) || obj?.playerName || obj?.playerShortName || obj?.playerSlug || obj?.player || null;
     if(nm && normName(nm)===tName) return true;
-    // also check 'assist' player objects for cards (rare)
     const a = obj?.assistant || obj?.assistPlayer;
-    if(a && normName(a?.name||a)===tName) return true;
+    if(a && normName((a && a.name) || a)===tName) return true;
     return false;
   };
 
   let goals=0, pg=0, yc=0, rc=0;
 
   const all = []
-    .concat(json?.incidents || [])
-    .concat(json?.events || [])
-    .concat(json?.timeline || [])
+    .concat((json && json.incidents) || [])
+    .concat((json && json.events) || [])
+    .concat((json && json.timeline) || [])
     .filter(Boolean);
 
   for(const ev of all){
@@ -284,7 +283,7 @@ async function sofaIncidentsToCounts(sofaEventId, playerName){
     // goals
     if((type.includes('goal') || ev?.isGoal === true) && matchPlayer(ev)){
       goals += 1;
-      const pen = ev?.isPenalty === true ||
+      const pen = (ev && ev.isPenalty === true) ||
                   /pen/.test(String(ev?.goalType||ev?.shotType||ev?.description||'').toLowerCase());
       if(pen) pg += 1;
     }
@@ -303,19 +302,17 @@ async function sofaIncidentsToCounts(sofaEventId, playerName){
 
 // ======= BUILD PER-MATCH RESULT =======
 function buildFotmobOnly({ matchUrl, general, potm, playerNode, playerId, playerName, next }){
-  // Base (existing) — we’ll optionally augment PG/YC/RC afterwards
   const league_id   = asNum(general.leagueId);
   const league_name = general.leagueName || null;
   const iso         = general.iso || null;
 
-  // Stats from node
   const base = extractStatsFromStatsBlocks(playerNode);
-  let goals  = clampInt(base.goals ?? 0);
-  let pg     = clampInt(base.penalty_goals ?? 0);
-  let ast    = clampInt(base.assists ?? 0);
+  let goals  = clampInt(nz(base.goals, 0));
+  let pg     = clampInt(nz(base.penalty_goals, 0));
+  let ast    = clampInt(nz(base.assists, 0));
   let yc     = Number.isFinite(base.yellow_cards) ? clampInt(base.yellow_cards) : 0;
   let rc     = Number.isFinite(base.red_cards) ? clampInt(base.red_cards) : 0;
-  let mins   = clampInt(base.minutes_played ?? 0);
+  let mins   = clampInt(nz(base.minutes_played, 0));
   const rating = (base.rating!=null ? Number(base.rating) : null);
   const fmp = mins >= 90;
 
@@ -331,34 +328,33 @@ function buildFotmobOnly({ matchUrl, general, potm, playerNode, playerId, player
 
   return {
     match_url: matchUrl,
-    resolved_match_id: general.matchId ? String(general.matchId) : (matchUrl.match(/\/match\/(\d+)/)?.[1] || null),
+    resolved_match_id: general.matchId ? String(general.matchId) : ((matchUrl.match(/\/match\/(\d+)/) || [])[1] || null),
     match_title: general.title || "match",
     league_id,
     league_label: league_name,
     match_datetime_utc: iso,
-    league_allowed: league_id!=null && TOP5_LEAGUE_IDS.has(league_id),
+    league_allowed: (league_id !== null && league_id !== undefined) && TOP5_LEAGUE_IDS.has(league_id),
     within_season_2025_26: !!iso && inSeason(iso),
     player_is_pom,
     player_rating: rating,
-    potm_name: potm?.name ? { fullName: potm.name } : null,
-    potm_id: potm?.id ?? null,
+    potm_name: potm && potm.name ? { fullName: potm.name } : null,
+    potm_id: potm ? potm.id : null,
 
-    // team identity for de-dup
-    home_team_id: general.hId ?? null,
-    home_team_name: general.hName ?? null,
-    away_team_id: general.aId ?? null,
-    away_team_name: general.aName ?? null,
+    home_team_id: (general.hId !== undefined ? general.hId : null),
+    home_team_name: general.hName || null,
+    away_team_id: (general.aId !== undefined ? general.aId : null),
+    away_team_name: general.aName || null,
     fixture_key,
 
     player_stats: {
-      goals,              // total
-      penalty_goals: pg,  // PG
+      goals,
+      penalty_goals: pg,
       assists: ast,
       yellow_cards: yc,
       red_cards: rc,
       full_match_played: !!fmp
     },
-    echo_player_name: (playerNode?.name?.fullName || playerName || null),
+    echo_player_name: (playerNode && playerNode.name && (playerNode.name.fullName || playerNode.name)) || playerName || null,
     source: "fotmob_html"
   };
 }
@@ -391,7 +387,7 @@ export async function handler(event){
     // 2) Build baseline result from FotMob (keeps your POTM/FMP/assists, etc.)
     const out = buildFotmobOnly({ matchUrl, general, potm, playerNode: node, playerId, playerName, next });
 
-    // 3) Only for valid domestic 2025-26 matches, try to augment PG + YC/RC using SofaScore incidents
+    // 3) Augment PG + YC/RC using SofaScore incidents for valid domestic 2025-26 matches
     if (USE_SOFASCORE && out.league_allowed && out.within_season_2025_26 && out.match_datetime_utc && out.home_team_name && out.away_team_name) {
       try{
         const sofaId = await findSofaEventId({
@@ -402,11 +398,10 @@ export async function handler(event){
 
         if(sofaId){
           const agg = await sofaIncidentsToCounts(sofaId, out.echo_player_name || playerName);
-          // Merge: only override when SofaScore is non-zero OR FotMob value is zero.
+          // Merge (prefer SofaScore when it finds positive counts)
           if(agg.pg > 0 || out.player_stats.penalty_goals === 0){
             out.player_stats.penalty_goals = clampInt(agg.pg);
           }
-          // For completeness, if SofaScore total goals differs and FotMob has 0, adopt SofaScore goals
           if((agg.goals > 0 && out.player_stats.goals === 0) || agg.goals >= out.player_stats.goals){
             out.player_stats.goals = clampInt(agg.goals);
           }
@@ -419,8 +414,7 @@ export async function handler(event){
           out.source = (out.source || "") + "+sofa_incidents";
         }
       }catch(e){
-        // Soft failure: keep FotMob numbers
-        out.sofa_error = String(e).slice(0,180);
+        out.sofa_error = String(e).slice(0,180); // soft-fail
       }
     }
 
