@@ -136,19 +136,36 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
   const setStatus = s => status.textContent = s;
   const log = s => { logBox.textContent += s + "\n"; logBox.scrollTop = logBox.scrollHeight; };
 
+  // Harden URL normalization so CSV and paste behave identically
   function normalizeUrl(u){
-    u = String(u||'').trim();
-    if(!u) return '';
-    return u.replace(/https?:\/\/www\.fotmob\.com\/(en-[A-Z]{2}\/)?/, 'https://www.fotmob.com/');
+    if(!u && u!==0) return '';
+    u = String(u).replace(/^\uFEFF/, '').trim();               // strip BOM + trim
+    u = u.replace(/^["']|["']$/g, '');                         // strip wrapping quotes
+    // remove query/hash
+    const hashIdx = u.indexOf('#'); if(hashIdx >= 0) u = u.slice(0, hashIdx);
+    const qIdx = u.indexOf('?');   if(qIdx   >= 0) u = u.slice(0, qIdx);
+    // unify host + scheme
+    u = u.replace(/^https?:\/\/(m\.)?fotmob\.com/i, 'https://www.fotmob.com');
+    // remove locale segment like /en-GB/ or /en-us/
+    u = u.replace(/https:\/\/www\.fotmob\.com\/[a-z]{2}-[a-z]{2}\//i, 'https://www.fotmob.com/');
+    // collapse multiple slashes + drop trailing slash
+    u = u.replace(/\/{2,}/g, '/').replace('https:/', 'https://').replace(/\/+$/, '');
+    return u;
   }
-  function isPlayerUrl(u){ return /https?:\/\/www\.fotmob\.com\/players\/\d+\/[^/\s]+$/i.test(u); }
+  // Accept only canonical player URLs (prevents passing malformed rows to discover)
+  function isPlayerUrl(u){
+    return /^https:\/\/www\.fotmob\.com\/players\/\d+\/[^/\s]+$/i.test(u);
+  }
 
   function parseCsv(text){
+    // robust line split (preserve commas inside quotes)
+    text = String(text || '').replace(/^\uFEFF/, ''); // strip BOM
     const lines = text.replace(/\r/g,'').split('\n').map(s=>s.trim()).filter(Boolean);
     const out = [];
     for(const line of lines){
       let parts = []; let cur=''; let inQ=false;
-      for(const ch of line){
+      for(let i=0;i<line.length;i++){
+        const ch = line[i];
         if(ch === '"'){ inQ = !inQ; continue; }
         if(ch === ',' && !inQ){ parts.push(cur.trim()); cur=''; continue; }
         cur += ch;
@@ -159,14 +176,16 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
         if(isPlayerUrl(url)) out.push({ name:'', url });
         continue;
       }
-      const name = parts[0].replace(/^['"]|['"]$/g,'').trim();
-      const url  = normalizeUrl(parts[1].replace(/^['"]|['"]$/g,'').trim());
+      const name = parts[0] ? parts[0].replace(/^['"]|['"]$/g,'').trim() : '';
+      const url  = parts[1] ? normalizeUrl(parts[1].replace(/^['"]|['"]$/g,'').trim()) : '';
       if(isPlayerUrl(url)) out.push({ name, url });
     }
-    // drop header row if present
+    // drop header row if present (more strict)
     if(out.length){
-      const h = out[0];
-      if(/^name|player/i.test(h.name||'') || /^url$/i.test(h.url||'')) out.shift();
+      const h0 = (lines[0]||'').toLowerCase();
+      if(/\bname\b/.test(h0) && /\burl\b/.test(h0)) {
+        // header detected in original first line; already ignored if it didn't match isPlayerUrl
+      }
     }
     return out;
   }
@@ -177,16 +196,18 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     queuedList.textContent = arr.map(x=>`• ${x.name ? x.name + ' — ' : ''}${x.url}`).join('\n');
   }
   function addPlayers(items){
-    let added = 0;
+    let added = 0, skipped = 0;
     for(const it of items){
-      if(!it || !it.url) continue;
-      if(!isPlayerUrl(it.url)) continue;
-      const prev = queued.get(it.url);
+      if(!it || !it.url) { skipped++; continue; }
+      const url = normalizeUrl(it.url);
+      if(!isPlayerUrl(url)) { skipped++; continue; }
+      const prev = queued.get(url);
       const name = (it.name || (prev && prev.name) || '').trim();
-      queued.set(it.url, { name, url: it.url });
+      queued.set(url, { name, url });
       added++;
     }
     refreshQueuedUI();
+    if(added || skipped) log(`CSV add: added ${added}, skipped ${skipped}`);
     return added;
   }
 
@@ -243,7 +264,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     const agg = { player_name: playerName||'', player_url: playerUrl, checked: 0, potm: 0, goals: 0, pg: 0, assists: 0, yc: 0, rc: 0, fmp: 0 };
     for(const r of rows){
       if(r.error) continue;
-      if(!(r.league_allowed && r.within_season_2025_26)) continue; // unchanged filter
+      if(!(r.league_allowed && r.within_season_2025_26)) continue;
       agg.checked += 1;
       if(r.player_is_pom) agg.potm += 1;
       const ps = r.player_stats || {};
@@ -331,13 +352,13 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
       const matches = d.match_urls || [];
 
       const rows = await poolLimit(5, matches, async (mUrl)=>{
-        const r = await check(mUrl, d.player_id, d.name || p.name);
+        const r = await check(mUrl, d.player_id, d.name || '');
         checkedCount++;
         if(checkedCount % 3 === 0) kpiChecked.textContent = `Checked: ${checkedCount}`;
         return r;
       });
 
-      const agg = aggregate(d.name || p.name, p.url, rows);
+      const agg = aggregate(d.name || '', p.url, rows);
       perPlayer.push({ rows, agg });
       log(`• ${agg.player_name || '(name)'}: checked ${agg.checked}, POTM ${agg.potm} | Goals ${agg.goals} (NPG ${agg.npg}, PG ${agg.pg}) | Ast ${agg.assists} | YC ${agg.yc} | RC ${agg.rc} | FMP ${agg.fmp}`);
     }
