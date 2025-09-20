@@ -1,6 +1,6 @@
 // netlify/functions/check.mjs
 // Check one match URL for a given player (POTM + key stats) and emit a stable fixture fingerprint.
-// Fixes: accurate NPG/PG (multi-source), YC/RC from events, robust minutes played fallback.
+// Fixes: accurate NPG/PG (multi-source), YC/RC from events (broad variants), robust minutes fallback.
 //
 // Input (POST JSON): { matchUrl, playerId?, playerName? }
 // Output fields used by index.html (incl. fixture_key for de-dup)
@@ -182,8 +182,8 @@ function extractStatsFromStatsBlocks(node){
   const goals  = pick(["Goals","Total goals"]);
   const pg     = pick(["Penalty goals","Penalties scored","Scored penalties","Penalty Goals","Penalty Goals Scored"]);
   const ast    = pick(["Assists","Total assists"]);
-  const yc     = pick(["Yellow cards","Yellow Cards","YC","Yellow Card"]);
-  const rc     = pick(["Red cards","Red Cards","RC","Red Card"]);
+  const yc     = pick(["Yellow cards","Yellow Cards","YC","Yellow Card","Bookings"]);
+  const rc     = pick(["Red cards","Red Cards","RC","Red Card","Dismissals"]);
 
   if(Number.isFinite(rating)) acc.rating = rating;
   if(Number.isFinite(mins))   acc.minutes_played = mins;
@@ -196,85 +196,99 @@ function extractStatsFromStatsBlocks(node){
   return acc;
 }
 
-// ---- NEW: derive stats from EVENTS (robust across templates) ----
+// ---- Robust EVENTS extraction (goals/penalties/assists/cards) ----
 function extractFromEvents(root, playerId, playerName){
   const acc = { goals:0, penalty_goals:0, assists:0, yellow_cards:0, red_cards:0 };
   const tName = normName(playerName||'');
 
   const matchId = (ev) => {
-    const pid = asNum(ev?.player?.id ?? ev?.playerId ?? ev?.actor?.id ?? ev?.participant?.id);
-    const nm  = ev?.player?.name?.fullName || ev?.playerName || ev?.player || ev?.actor?.name || ev?.name || null;
+    const pid = asNum(ev?.player?.id ?? ev?.playerId ?? ev?.actor?.id ?? ev?.participant?.id ?? ev?.subject?.id);
+    const nm  = ev?.player?.name?.fullName || ev?.playerName || ev?.player || ev?.actor?.name || ev?.name || ev?.subject?.name || null;
     if(playerId && pid === playerId) return true;
     if(!playerId && nm && normName(nm)===tName) return true;
     return false;
   };
-
   const assistMatch = (ev) => {
-    const aid = asNum(ev?.assist?.id ?? ev?.assistId ?? ev?.assisterId ?? ev?.assistPlayerId);
-    const anm = ev?.assist?.name?.fullName || ev?.assistName || ev?.assisterName || null;
+    const aid = asNum(ev?.assist?.id ?? ev?.assistId ?? ev?.assisterId ?? ev?.assistPlayerId ?? ev?.secondaryPlayerId);
+    const anm = ev?.assist?.name?.fullName || ev?.assistName || ev?.assisterName || ev?.secondaryPlayerName || null;
     if(playerId && aid === playerId) return true;
     if(!playerId && anm && normName(anm)===tName) return true;
     return false;
   };
 
+  const text = (...xs)=> String(xs.find(v=>v!=null) ?? '').toLowerCase();
   const isGoalEvent = (ev) => {
-    const t = String(ev?.type ?? ev?.eventType ?? ev?.key ?? ev?.kind ?? ev?.code ?? '').toLowerCase();
-    const detail = String(ev?.detail ?? ev?.subType ?? ev?.scoringType ?? ev?.goalType ?? '').toLowerCase();
-    const res = String(ev?.result ?? '').toLowerCase();
-    return t.includes('goal') || res==='goal' || detail.includes('goal') || ev?.isGoal === true;
+    const t = text(ev.type, ev.eventType, ev.incidentType, ev.key, ev.code, ev.kind, ev.result);
+    const d = text(ev.detail, ev.subType, ev.scoringType, ev.goalType, ev.outcome);
+    return t.includes('goal') || d.includes('goal') || t==='score' || t==='scored' || ev?.isGoal===true;
+  };
+  const isOwnGoal = (ev) => {
+    const t = text(ev.detail, ev.subType, ev.scoringType, ev.goalType, ev.description);
+    return t.includes('own') || ev?.isOwnGoal === true;
   };
   const isPenaltyGoal = (ev) => {
-    const t = String(ev?.type ?? ev?.eventType ?? ev?.key ?? '').toLowerCase();
-    const detail = String(ev?.detail ?? ev?.subType ?? ev?.scoringType ?? ev?.goalType ?? '').toLowerCase();
-    return /pen/.test(t) || /pen/.test(detail) || ev?.isPenalty === true;
+    const t = text(ev.type, ev.eventType, ev.scoringType, ev.goalType, ev.detail, ev.subType, ev.situation, ev.description);
+    return t.includes('pen') || ev?.isPenalty === true || ev?.penalty === true || (ev?.shotType?.name && /pen/i.test(ev.shotType.name));
   };
   const isYellow = (ev) => {
-    const t = String(ev?.type ?? ev?.eventType ?? ev?.key ?? ev?.card ?? '').toLowerCase();
-    const detail = String(ev?.detail ?? ev?.subType ?? '').toLowerCase();
-    return t.includes('yellow') || detail.includes('yellow') || ev?.card === 'yellow';
+    const t = text(ev.type, ev.eventType, ev.key, ev.card, ev.cardType, ev.kind, ev.incidentType, ev.description);
+    const d = text(ev.detail, ev.subType);
+    return t.includes('yellow') || d.includes('yellow') || ev?.card === 'yellow';
   };
   const isRed = (ev) => {
-    const t = String(ev?.type ?? ev?.eventType ?? ev?.key ?? ev?.card ?? '').toLowerCase();
-    const detail = String(ev?.detail ?? ev?.subType ?? '').toLowerCase();
-    return t.includes('red') || detail.includes('red') || ev?.card === 'red';
+    const t = text(ev.type, ev.eventType, ev.key, ev.card, ev.cardType, ev.kind, ev.incidentType, ev.description);
+    const d = text(ev.detail, ev.subType);
+    return t.includes('red') || d.includes('red') || ev?.card === 'red' || d.includes('second yellow');
   };
 
+  // Collect arrays that look event-ish
   const arrays = new Set();
-
   for(const node of walk(root)){
-    for (const key of Object.keys(node||{})){
-      const val = node[key];
-      if(Array.isArray(val) && val.length && !arrays.has(val)){
-        arrays.add(val);
+    for (const [k,val] of Object.entries(node||{})){
+      if(Array.isArray(val) && val.length){
+        const e0 = val[0];
+        if(e0 && typeof e0==='object' && (
+            'type' in e0 || 'eventType' in e0 || 'key' in e0 || 'card' in e0 ||
+            'isGoal' in e0 || 'result' in e0 || 'assist' in e0 || 'player' in e0
+        )){
+          arrays.add(val);
+        }
       }
     }
   }
 
+  let sawYellowAsSecond = false;
   for(const arr of arrays){
     for(const ev of arr){
       if(!ev || typeof ev!=='object') continue;
 
-      // Goals
-      if(isGoalEvent(ev) && matchId(ev)){
+      // Goals (exclude own goals)
+      if(isGoalEvent(ev) && matchId(ev) && !isOwnGoal(ev)){
         acc.goals += 1;
         if(isPenaltyGoal(ev)) acc.penalty_goals += 1;
       }
-      // Assists (credited on the scoring event)
-      if(isGoalEvent(ev) && assistMatch(ev)){
+
+      // Assists (on the scoring event)
+      if(isGoalEvent(ev) && assistMatch(ev) && !isOwnGoal(ev)){
         acc.assists += 1;
       }
+
       // Cards
       if(matchId(ev)){
         if(isYellow(ev)) acc.yellow_cards += 1;
-        if(isRed(ev))    acc.red_cards += 1;
+        if(isRed(ev)) {
+          acc.red_cards += 1;
+          if(text(ev.detail).includes('second yellow')) sawYellowAsSecond = true;
+        }
       }
     }
   }
+  if(sawYellowAsSecond && acc.yellow_cards===0) acc.yellow_cards = 1;
 
   return acc;
 }
 
-// ---- Fallback: derive from SHOTMAP for penalties/goals when events missing ----
+// ---- Fallback: derive from SHOTMAP if events missing ----
 function extractFromShotmap(root, playerId, playerName){
   const acc = { goals:0, penalty_goals:0 };
   const tName = normName(playerName||'');
@@ -291,7 +305,8 @@ function extractFromShotmap(root, playerId, playerName){
       if(!sh || typeof sh!=='object') continue;
       const goal = sh.isGoal === true || String(sh?.result||'').toLowerCase()==='goal';
       const pen  = sh.isPenalty === true || String(sh?.situation||'').toLowerCase().includes('pen');
-      if(goal){ acc.goals += 1; if(pen) acc.penalty_goals += 1; }
+      const own  = sh.isOwnGoal === true || String(sh?.description||'').toLowerCase().includes('own');
+      if(goal && !own){ acc.goals += 1; if(pen) acc.penalty_goals += 1; }
     }
   }
   return acc;
@@ -315,16 +330,15 @@ function buildResult(payload){
   let mins   = Number.isFinite(base.minutes_played) ? base.minutes_played : null;
   let rating = Number.isFinite(base.rating) ? base.rating : null;
 
-  // 2) Events (most reliable for PG/YC/RC)
+  // 2) Events (most reliable)
   const evAgg = extractFromEvents(next, playerId, playerName);
   if(!Number.isFinite(goals)) goals = evAgg.goals;
   if(!Number.isFinite(pg))    pg    = evAgg.penalty_goals;
   if(!Number.isFinite(yc))    yc    = evAgg.yellow_cards;
   if(!Number.isFinite(rc))    rc    = evAgg.red_cards;
-  // assists: if stats missing but events found, keep events
   if(!Number.isFinite(base.assists) && Number.isFinite(evAgg.assists)) ast = evAgg.assists;
 
-  // 3) Shotmap fallback for goals/penalties if still null
+  // 3) Shotmap fallback if still null
   if(!Number.isFinite(goals) || !Number.isFinite(pg)){
     const sm = extractFromShotmap(next, playerId, playerName);
     if(!Number.isFinite(goals)) goals = sm.goals;
