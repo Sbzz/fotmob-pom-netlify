@@ -1,19 +1,18 @@
 // netlify/functions/discover.mjs
 // Discover 2025–26 Top-5 domestic league matches for FotMob player URLs.
-// Uses player + team __NEXT_DATA__, and enriches via the match HTML page
-// (parsing __NEXT_DATA__) to avoid API 401s. Filters to Top-5, in-season,
-// already kicked off. Time-budgeted and always returns JSON.
+// Uses player + team __NEXT_DATA__, and enriches via the MATCH HTML page __NEXT_DATA__.
+// Filters to Top-5, in-season, already kicked off. Time-budgeted and always JSON.
 
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1));                // 2025-07-01
-const SEASON_END   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59));   // 2026-06-30 23:59:59
+const SEASON_END   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59));   // 2026-06-30
 const NOW          = new Date();
 
-const BUDGET_MS    = 9500; // keep below Netlify's 10s
-const FETCH_TO_MS  = 2200; // per fetch timeout
-const ENRICH_MAX   = 32;   // probe fewer IDs to fit budget
-const ENRICH_CONC  = 3;    // gentle concurrency
-const ENOUGH_MATCHES = 14; // stop enriching once we have this many (early season rarely exceeds)
+const BUDGET_MS    = 9500;
+const FETCH_TO_MS  = 2200;
+const ENRICH_MAX   = 32;
+const ENRICH_CONC  = 3;
+const ENOUGH_MATCHES = 14;
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36";
 const HDRS_HTML = { accept:"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "user-agent":UA, referer:"https://www.fotmob.com/", "accept-language":"en-GB,en;q=0.9" };
@@ -84,7 +83,7 @@ function parsePlayerIdFromUrl(url){
   }catch{ return null; }
 }
 
-// Collect matches (matchId, maybe leagueId/iso) + player/team from arbitrary NEXT trees
+// Collect matches (id, maybe leagueId/iso) + player/team from arbitrary NEXT trees
 function collectMatchesFromNext(root){
   const matches=[];
   let playerId=null, playerName=null, teamId=null, teamSlug=null;
@@ -131,10 +130,8 @@ function collectMatchesFromNext(root){
   return { matches, playerId, playerName, teamId, teamSlug };
 }
 
-// Extract leagueId + kickoff + teams from the MATCH page's NEXT tree
 function extractFromMatchNext(root){
   let leagueId=null, iso=null, hId=null, aId=null;
-  // Prefer nodes with a "general" subobject
   for(const node of walk(root)){
     const g = node?.general || node?.overview?.general || null;
     if(!g) continue;
