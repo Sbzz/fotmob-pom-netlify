@@ -121,8 +121,13 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
 
 <script>
 (function(){
-  // ---------- config ----------
-  const DISCOVER_BATCH_SIZE = 1; // tune if needed
+  // ---------- tunables (reliability) ----------
+  const DISCOVER_BATCH_SIZE = 4;     // keep small; 1–6 are safest
+  const DISCOVER_RETRIES = 2;        // retry batches that return empty/failed
+  const DISCOVER_RETRY_DELAY = 500;  // ms between retries
+
+  const CHECK_CONCURRENCY = 2;       // avoid hammering; was 5
+  const CHECK_SPREAD_MS = 120;       // add tiny jitter between checks
 
   // ---------- state & dom ----------
   const queued = new Map(); // url -> { name, url }
@@ -150,7 +155,8 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
   const btnDownloadRowsJson = el('btnDownloadRowsJson');
 
   // ---------- utils ----------
-  const escapeHtml = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const sleep = (ms)=> new Promise(r=>setTimeout(r, ms));
+  const escapeHtml = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39'}[c]));
   const csvEscape = v => { if(v==null) v=''; v=String(v); return /[",\n]/.test(v)? `"${v.replace(/"/g,'""')}"` : v; };
   const setStatus = s => status.textContent = s;
   const log = s => { logBox.textContent += s + "\n"; logBox.scrollTop = logBox.scrollHeight; };
@@ -266,7 +272,19 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     try { return JSON.parse(txt); } catch { return { error:'Bad JSON from /check', raw: txt.slice(0,300) }; }
   }
 
+  // helpers
   function npg(goals, pg){ goals = goals|0; pg = pg|0; return Math.max(0, goals - pg); }
+  function dedupMatchUrls(arr){
+    const seen = new Set();
+    const out = [];
+    for(const u of arr || []){
+      const id = (String(u||'').match(/\/match\/(\d+)/)||[])[1] || String(u||'');
+      if(seen.has(id)) continue;
+      seen.add(id);
+      out.push(u);
+    }
+    return out;
+  }
 
   function aggregate(playerName, playerUrl, rows){
     const agg = { player_name: playerName||'', player_url: playerUrl, checked: 0, potm: 0, goals: 0, pg: 0, assists: 0, yc: 0, rc: 0, fmp: 0 };
@@ -287,33 +305,14 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     return agg;
   }
 
-  function renderTable(totals){
-    tbody.innerHTML = '';
-    for(const t of totals){
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${escapeHtml(t.player_name || '(name)')}</td>
-        <td>${t.checked}</td>
-        <td>${t.potm}</td>
-        <td>${t.goals}</td>
-        <td>${t.npg}</td>
-        <td>${t.pg}</td>
-        <td>${t.assists}</td>
-        <td>${t.yc}</td>
-        <td>${t.rc}</td>
-        <td>${t.fmp}</td>`;
-      tbody.appendChild(tr);
-    }
-  }
-
-  async function poolLimit(concurrency, tasks, worker){
+  async function poolLimit(concurrency, tasks, worker, spreadMs=0){
     const ret = []; let i = 0; const running = new Set();
     return new Promise((resolve)=>{
-      const runNext = ()=>{
+      const runNext = async ()=>{
         if(i >= tasks.length && running.size===0){ resolve(ret); return; }
         while(running.size < concurrency && i < tasks.length){
           const idx = i++; const t = tasks[idx];
-          const p = (async ()=> worker(t, idx))()
+          const p = (async ()=>{ if(spreadMs) await sleep(spreadMs); return worker(t, idx); })()
             .then(v=>{ ret[idx]=v; running.delete(p); runNext(); })
             .catch(e=>{ ret[idx]={ error:String(e) }; running.delete(p); runNext(); });
           running.add(p);
@@ -340,7 +339,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
         url: normUrl,
         name: injectedName,
         player_id: p.player_id || (idStr ? Number(idStr) : null),
-        match_urls: Array.isArray(p.match_urls) ? p.match_urls : []
+        match_urls: dedupMatchUrls(Array.isArray(p.match_urls) ? p.match_urls : [])
       };
       byUrl.set(normUrl, item);
       if(idStr) byId.set(idStr, item);
@@ -348,7 +347,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
     return { byUrl, byId };
   }
 
-  // Run flow with batched discover
+  // Run flow with batched discover + retries + throttled checks
   btnRun.addEventListener('click', async ()=>{
     setStatus('Running…'); log('Starting…');
 
@@ -357,22 +356,30 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
 
     kpiPlayers.textContent = `Players: ${players.length}`;
 
-    // --- batched discover ---
+    // --- batched discover with retries ---
     const batches = chunk(players, DISCOVER_BATCH_SIZE);
     const combinedByUrl = new Map();
     const combinedById  = new Map();
     let totalMatches = 0;
+
     for(let bi=0; bi<batches.length; bi++){
       const batch = batches[bi];
       const urls = batch.map(p=>p.url);
-      log(`Discover batch ${bi+1}/${batches.length}: ${urls.length} players`);
-      const disc = await discover(urls);
-      if(!disc || disc.ok === false){
-        log(`Discover batch ${bi+1} error: ${disc && (disc.error || disc.raw) || 'unknown'}`);
-        continue;
+
+      let attempt = 0, ok = false, disc = null;
+      while(attempt <= DISCOVER_RETRIES && !ok){
+        attempt++;
+        log(`Discover batch ${bi+1}/${batches.length} (try ${attempt}/${DISCOVER_RETRIES+1}) — players: ${urls.length}`);
+        disc = await discover(urls);
+        ok = !!disc && disc.ok !== false;
+        if(!ok){
+          log(`  ↪ failed: ${disc && (disc.error || disc.raw) || 'unknown'}`);
+          if(attempt <= DISCOVER_RETRIES) await sleep(DISCOVER_RETRY_DELAY);
+        }
       }
+      if(!ok) continue;
+
       const { byUrl, byId } = buildMapsFromDiscover(disc.players || [], queued);
-      // merge
       for(const [k,v] of byUrl) {
         combinedByUrl.set(k, v);
         totalMatches += (v.match_urls ? v.match_urls.length : 0);
@@ -380,14 +387,36 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
       for(const [k,v] of byId) combinedById.set(k, v);
 
       kpiMatches.textContent = `Matches found: ${totalMatches}`;
-      if(disc.meta && typeof disc.meta.ms === 'number'){
-        log(`Batch ${bi+1} OK: ~${disc.meta.ms}ms, matches +${Object.values(byUrl).length || 0}`);
+      for(const p of batch){
+        const norm = normalizeUrl(p.url);
+        const idStr = playerIdFromUrl(norm);
+        const d = combinedByUrl.get(norm) || (idStr ? combinedById.get(idStr) : null);
+        const c = d && d.match_urls ? d.match_urls.length : 0;
+        log(`  • ${p.name || '(name)'} — discovered ${c} matches`);
+        // Per-player empty? try a tiny per-player re-discover once
+        if(c === 0){
+          await sleep(150);
+          const single = await discover([norm]);
+          if(single && single.ok !== false){
+            const { byUrl:bu2, byId:bi2 } = buildMapsFromDiscover(single.players || [], queued);
+            const d2 = bu2.get(norm) || (idStr ? bi2.get(idStr) : null);
+            const c2 = d2 && d2.match_urls ? d2.match_urls.length : 0;
+            if(d2){
+              combinedByUrl.set(norm, d2);
+              if(idStr) combinedById.set(idStr, d2);
+              totalMatches += c2;
+              kpiMatches.textContent = `Matches found: ${totalMatches}`;
+              log(`    ↪ retry found ${c2} matches`);
+            }
+          }
+        }
       }
     }
+
     log(`Total matches found (all batches): ${totalMatches}`);
     kpiMatches.textContent = `Matches found: ${totalMatches}`;
 
-    // --- checks ---
+    // --- checks (throttled) ---
     let checkedCount = 0;
     const perPlayer = [];
 
@@ -400,12 +429,13 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
       }
       const matches = d.match_urls || [];
 
-      const rows = await poolLimit(5, matches, async (mUrl)=>{
+      const rows = await poolLimit(CHECK_CONCURRENCY, matches, async (mUrl)=>{
+        await sleep(CHECK_SPREAD_MS);
         const r = await check(mUrl, d.player_id, d.name || '');
         checkedCount++;
         if(checkedCount % 3 === 0) kpiChecked.textContent = `Checked: ${checkedCount}`;
         return r;
-      });
+      }, CHECK_SPREAD_MS);
 
       const agg = aggregate(d.name || '', p.url, rows);
       perPlayer.push({ rows, agg });
