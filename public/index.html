@@ -202,19 +202,20 @@
       for(const r of (p.raw||[])){
         const s=r.player_stats||{};
         const tr=document.createElement('tr'); tr.innerHTML=`
-          <td><a href="${r.match_url}" target="_blank" rel="noopener">${r.match_title||r.resolved_match_id||'match'}</a></td>
-          <td>${r.league_label??''}</td>
-          <td>${r.match_datetime_utc??''}</td>
-          <td>${r.player_is_pom?'✅':''}</td>
-          <td>${(r.player_rating!=null?Number(r.player_rating).toFixed(2):'')}</td>
-          <td>${s.goals??''}</td>
-          <td>${Math.max(0, Number(s.goals||0)-Number(s.penalty_goals||0))}</td>
-          <td>${s.penalty_goals??''}</td>
-          <td>${s.assists??''}</td>
-          <td>${s.yellow_cards??''}</td>
-          <td>${s.red_cards??''}</td>
-          <td>${s.full_match_played?'90+':''}</td>
-          <td class="muted small">${r.source||''}</td>`;
+         tr.innerHTML = `
+  <td>${r.match_title || r.resolved_match_id || ''}</td>
+  <td>${r.league_label ?? ''}</td>
+  <td>${r.player_is_pom ? "✓" : ""}</td>
+  <td>${r.player_rating ?? ''}</td>
+  <td>${s.goals ?? ''}</td>
+  <td>${Math.max(0, Number(s.goals || 0) - Number(s.penalty_goals || 0))}</td>
+  <td>${s.penalty_goals ?? ''}</td>
+  <td>${s.assists ?? ''}</td>
+  <td>${s.yellow_cards ?? ''}</td>
+  <td>${s.red_cards ?? ''}</td>
+  <td>${s.full_match_played ? "✓" : ""}</td>
+`;
+
         tb.appendChild(tr);
       }
       grid.appendChild(table); card.appendChild(grid);
