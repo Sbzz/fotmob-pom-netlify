@@ -1,510 +1,398 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>FotMob POTM & Stats • 2025–26 (Top 5 Leagues)</title>
+  <title>FotMob — POTM & Highest (Top-5, 2025–26)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root {
-      --bg: #0b0f14; --card:#121922; --muted:#8aa0b7; --text:#e9f0f7;
-      --accent:#4cc9f0; --good:#06d6a0; --warn:#ffd166; --bad:#ef476f; --border:#1f2b3a;
+    :root{
+      --bg:#0b1220;--card:#0f172a;--muted:#94a3b8;--text:#e5e7eb;
+      --accent:#4f46e5;--accent-2:#10b981;--danger:#ef4444;--warn:#f59e0b;
+      --code:#0b1020;--success-bg:#062b1a;--success-border:#0ea861;
+      --error-bg:#311016;--error-border:#f87171;--border:#1f2937;
     }
-    html, body { background: var(--bg); color: var(--text); margin:0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial;
-    }
-    .wrap { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
-    .grid { display:grid; grid-template-columns: 1fr; gap: 16px; }
-    @media (min-width: 960px){ .grid { grid-template-columns: 1.1fr 1fr; } }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
-    .title { font-size: 20px; margin: 0 0 10px; font-weight: 700; letter-spacing: .2px; }
-    .muted { color: var(--muted); font-size: 13px;}
-    textarea, input, button, .btn { font: inherit; }
-    textarea, input[type="text"] { width: 100%; background: #0f1620; border: 1px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: 12px; outline: none; }
-    textarea { min-height: 110px; resize: vertical; }
-    .row { display:flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    .btn { background: #162231; border: 1px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: 12px; cursor: pointer; }
-    .btn:hover { border-color: #2b3a51; }
-    .btn.accent { background: var(--accent); color: #061019; border: none; }
-    .btn.good { background: var(--good); color: #041411; border: none; }
-    .btn.warn { background: var(--warn); color: #1e1200; border: none; }
-    .pill { display:inline-block; padding: 4px 8px; border-radius: 999px; background: #0f1620; border:1px solid var(--border); font-size: 12px; color: var(--muted); }
-    .hr { height:1px; background: var(--border); margin: 12px 0; }
-    .table-wrap { overflow:auto; border-radius: 12px; border:1px solid var(--border); }
-    table { width:100%; border-collapse: collapse; min-width: 760px; }
-    th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; }
-    th { background: #0f1620; position: sticky; top: 0; z-index: 1; }
-    tr:hover td { background: #0e1520; }
-    .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    *{box-sizing:border-box}
+    body{background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;margin:0;padding:32px 16px 56px}
+    .container{max-width:1100px;margin:0 auto}
+    h1{margin:0 0 12px;font-size:28px;font-weight:700}
+    p.muted{color:var(--muted);margin-top:0}
+    .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    @media (max-width:860px){.grid,.grid-2{grid-template-columns:1fr}}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:0 8px 16px rgba(0,0,0,.25)}
+    label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+    textarea,input,button{width:100%;padding:12px;border-radius:10px;border:1px solid #233044;background:#0b1220;color:var(--text);outline:none}
+    textarea::placeholder,input::placeholder{color:#6b7280}
+    textarea:focus,input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(79,70,229,.25)}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .btn{border:1px solid #2b374f;background:linear-gradient(180deg,#1b2540,#151e35);color:#fff;cursor:pointer;transition:transform .06s ease,box-shadow .2s ease;font-weight:600}
+    .btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(16,24,40,.35)}
+    .btn:disabled{opacity:.6;cursor:not-allowed}
+    .btn-accent{background:linear-gradient(180deg,#5661ff,#3843d0);border-color:#3641c8}
+    .btn-green{background:linear-gradient(180deg,#16c78a,#0ea66f);border-color:#0ea66f}
+    .badge{display:inline-block;padding:6px 10px;border-radius:999px;font-size:12px;border:1px solid #334155;background:#0b1325;color:#cbd5e1}
+    .badge.warn{border-color:var(--warn);color:#fde68a}
+    .badge.ok{border-color:var(--success-border);color:#a7f3d0;background:var(--success-bg)}
+    .badge.err{border-color:var(--danger);color:#fecaca;background:var(--error-bg)}
+    pre{background:var(--code);border:1px solid var(--border);border-radius:12px;padding:14px;overflow:auto;max-height:520px;font-size:13px;line-height:1.35}
+    .summary{background:#10223a;border:1px solid #244a78;border-radius:12px;padding:12px 14px;white-space:pre-wrap;font-weight:600}
+    .muted-small{color:var(--muted);font-size:12px}
+    table{width:100%;border-collapse:separate;border-spacing:0 8px}
+    thead th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#a8b3c7;text-align:left;padding:6px 10px}
+    tbody td{background:#0c1528;border:1px solid #1b2740;padding:10px 12px}
+    tbody tr td:first-child{border-top-left-radius:10px;border-bottom-left-radius:10px}
+    tbody tr td:last-child{border-top-right-radius:10px;border-bottom-right-radius:10px}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1 style="margin:0 0 8px">Top 5 Leagues • 2025–26 • POTM & Match Stats</h1>
-    <div class="muted">Domestic league matches only (PL, LaLiga, Bundesliga, Serie A, Ligue 1). Season: <b>2025-07-01 → 2026-06-30</b>.</div>
+  <div class="container">
+    <h1>FotMob — POTM & Highest Rating (Top-5, 2025–26)</h1>
+    <p class="muted">Paste FotMob player URLs. We discover matches (with fallback) and check POTM/Highest for Premier League, LaLiga, Bundesliga, Serie A, and Ligue 1 — season 2025–26 only.</p>
 
-    <div class="grid" style="margin-top:16px">
-      <div class="card">
-        <div class="title">1) Choose Players</div>
-
-        <div class="row" style="margin-bottom:8px">
-          <input id="csvFile" type="file" accept=".csv" />
-          <button class="btn" id="btnCsvAdd">Add from CSV</button>
-          <button class="btn" id="btnCsvDefault">Load /players.csv</button>
-          <span class="pill" id="csvCount">No CSV loaded</span>
-        </div>
-        <div class="hint">CSV format: <code>player name,url</code> per line. Header is optional.</div>
-
-        <div class="hr"></div>
-
-        <div class="title" style="font-size:16px;margin-top:6px">Or paste FotMob player URLs (one per line)</div>
-        <textarea id="urls" placeholder="e.g.
-Lamine Yamal, https://www.fotmob.com/players/1467236/lamine-yamal
-Vinicius Junior, https://www.fotmob.com/players/846033/vinicius-junior
+    <div class="card" style="margin-bottom:14px">
+      <div class="grid">
+        <div>
+          <label>Player URLs (one per line)</label>
+          <textarea id="urls" rows="7" placeholder="https://www.fotmob.com/players/1467236/lamine-yamal
 https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
-
-        <div class="row" style="margin-top:8px">
-          <button class="btn" id="btnQueue">Add pasted</button>
-          <button class="btn" id="btnClear">Clear list</button>
-          <span class="pill" id="queuedCount">Queued: 0</span>
         </div>
-
-        <div id="queuedList" class="hint" style="margin-top:8px"></div>
-      </div>
-
-      <div class="card">
-        <div class="title">2) Run</div>
-        <div class="row" style="margin-bottom:8px">
-          <button class="btn accent" id="btnRun">Discover → Check</button>
-          <span class="pill" id="status">Idle</span>
+        <div>
+          <label>From (YYYYMMDD) — fallback calendar</label>
+          <input id="from" type="text" value="20250701" />
+          <label style="margin-top:12px">To (YYYYMMDD) — fallback calendar</label>
+          <input id="to" type="text" />
+          <label style="margin-top:12px">Chunk size (days)</label>
+          <input id="chunkDays" type="number" value="7" min="1" />
+          <div class="muted-small">Used only if discover returns zero matches for a player.</div>
         </div>
-        <div class="row" style="gap:12px">
-          <span class="pill" id="kpiPlayers">Players: 0</span>
-          <span class="pill" id="kpiMatches">Matches found: 0</span>
-          <span class="pill" id="kpiChecked">Checked: 0</span>
-        </div>
-        <div id="log" class="muted" style="white-space: pre-wrap; margin-top:8px;"></div>
-
-        <div class="hr"></div>
-        <div class="row" style="margin-top:8px">
-          <button class="btn good" id="btnDownloadCSV">Download totals.csv</button>
-          <button class="btn good" id="btnDownloadJSON">Download totals.json</button>
-          <button class="btn" id="btnDownloadRowsCsv">Download rows.csv</button>
-          <button class="btn" id="btnDownloadRowsJson">Download rows.json</button>
+        <div>
+          <label>Max matches per player (cap)</label>
+          <input id="maxMatches" type="number" min="0" value="80" />
+          <div class="muted-small">0 = no cap.</div>
+          <label style="margin-top:12px">Check concurrency (per player)</label>
+          <input id="concurrency" type="number" min="1" value="3" />
+          <label style="margin-top:12px">Actions</label>
+          <div class="row">
+            <button id="run" class="btn btn-accent">Run</button>
+            <button id="downloadCsvPOM" class="btn btn-green" disabled>CSV — POTM</button>
+            <button id="downloadCsvHigh" class="btn" disabled>CSV — Highest</button>
+            <button id="downloadCsvSummary" class="btn" disabled>CSV — Summary</button>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="card" style="margin-top:16px">
-      <div class="title">Results</div>
-      <div id="summary" class="muted" style="margin-bottom:8px">No results yet.</div>
-      <div class="table-wrap">
-        <table id="tbl">
-          <thead>
-            <tr>
-              <th>Player</th>
-              <th>Checked</th>
-              <th>POTM</th>
-              <th>Goals</th>
-              <th>NPG</th>
-              <th>PG</th>
-              <th>Ast</th>
-              <th>YC</th>
-              <th>RC</th>
-              <th>FMP</th>
-            </tr>
-          </thead>
-          <tbody id="tbody"></tbody>
-        </table>
+    <div class="card" style="margin-bottom:14px">
+      <div class="row" style="align-items:center; justify-content:space-between">
+        <div><span class="badge" id="statusTag">Idle</span></div>
+        <div class="muted-small">We try per-player discovery first; if none found, we use a Top-5 calendar fallback for your date range.</div>
       </div>
+      <div class="summary" id="summaryBox" style="margin-top:10px">—</div>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:14px">
+      <div class="card">
+        <h3 style="margin-top:0">Status</h3>
+        <pre id="status">—</pre>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Output (JSON)</h3>
+        <pre id="out">—</pre>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between; align-items:center">
+        <h3 style="margin:0">Summary table (downloadable)</h3>
+        <div class="row" style="margin:-6px 0 8px">
+          <button id="downloadCsvTable" class="btn" disabled>Download table (CSV)</button>
+        </div>
+      </div>
+      <div class="muted-small" style="margin-bottom:8px">player name | number of times player of the match</div>
+      <table>
+        <thead>
+          <tr><th>Player</th><th>POTM (2025–26)</th><th>Highest Rating (2025–26)</th></tr>
+        </thead>
+        <tbody id="summaryTableBody">
+          <tr><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 
-<script>
-(function(){
-  // ---------- tunables (reliability) ----------
-  const DISCOVER_BATCH_SIZE = 4;     // keep small; 1–6 are safest
-  const DISCOVER_RETRIES = 2;        // retry batches that return empty/failed
-  const DISCOVER_RETRY_DELAY = 500;  // ms between retries
+  <script>
+  (function(){
+    // ---------- DOM refs ----------
+    const out = document.getElementById("out");
+    const statusEl = document.getElementById("status");
+    const statusTag = document.getElementById("statusTag");
+    const summaryBox = document.getElementById("summaryBox");
+    const tbody = document.getElementById("summaryTableBody");
 
-  const CHECK_CONCURRENCY = 2;       // avoid hammering; was 5
-  const CHECK_SPREAD_MS = 120;       // add tiny jitter between checks
+    const btnRun = document.getElementById("run");
+    const dlP = document.getElementById("downloadCsvPOM");
+    const dlH = document.getElementById("downloadCsvHigh");
+    const dlS = document.getElementById("downloadCsvSummary");
+    const dlT = document.getElementById("downloadCsvTable");
 
-  // ---------- state & dom ----------
-  const queued = new Map(); // url -> { name, url }
-  const el = id => document.getElementById(id);
-  const csvFile = el('csvFile');
-  const btnCsvAdd = el('btnCsvAdd');
-  const btnCsvDefault = el('btnCsvDefault');
-  const csvCount = el('csvCount');
-  const urlsTA = el('urls');
-  const btnQueue = el('btnQueue');
-  const btnClear = el('btnClear');
-  const queuedList = el('queuedList');
-  const queuedCount = el('queuedCount');
-  const btnRun = el('btnRun');
-  const status = el('status');
-  const kpiPlayers = el('kpiPlayers');
-  const kpiMatches = el('kpiMatches');
-  const kpiChecked = el('kpiChecked');
-  const logBox = el('log');
-  const tbody = el('tbody');
-  const summary = el('summary');
-  const btnDownloadCSV = el('btnDownloadCSV');
-  const btnDownloadJSON = el('btnDownloadJSON');
-  const btnDownloadRowsCsv = el('btnDownloadRowsCsv');
-  const btnDownloadRowsJson = el('btnDownloadRowsJson');
+    let lastCsvP = "", lastCsvH = "", lastCsvS = "";
 
-  // ---------- utils ----------
-  const sleep = (ms)=> new Promise(r=>setTimeout(r, ms));
-  const escapeHtml = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39'}[c]));
-  const csvEscape = v => { if(v==null) v=''; v=String(v); return /[",\n]/.test(v)? `"${v.replace(/"/g,'""')}"` : v; };
-  const setStatus = s => status.textContent = s;
-  const log = s => { logBox.textContent += s + "\n"; logBox.scrollTop = logBox.scrollHeight; };
+    // ---------- helpers ----------
+    const yyyymmdd = (d)=>{const y=d.getUTCFullYear();const m=String(d.getUTCMonth()+1).padStart(2,"0");const day=String(d.getUTCDate()).padStart(2,"0");return `${y}${m}${day}`;};
+    const todayUTC = ()=>{const now=new Date();return yyyymmdd(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())));};
+    const parseUrls = ()=> document.getElementById("urls").value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
 
-  function normalizeUrl(u){
-    if(!u && u!==0) return '';
-    u = String(u).replace(/^\uFEFF/, '').trim();
-    u = u.replace(/^["']|["']$/g, '');
-    const hashIdx = u.indexOf('#'); if(hashIdx >= 0) u = u.slice(0, hashIdx);
-    const qIdx = u.indexOf('?');   if(qIdx   >= 0) u = u.slice(0, qIdx);
-    u = u.replace(/^https?:\/\/(m\.)?fotmob\.com/i, 'https://www.fotmob.com');
-    u = u.replace(/https:\/\/www\.fotmob\.com\/[a-z]{2}-[a-z]{2}\//i, 'https://www.fotmob.com/');
-    u = u.replace(/\/{2,}/g, '/').replace('https:/', 'https://').replace(/\/+$/, '');
-    return u;
-  }
-  function isPlayerUrl(u){
-    return /^https:\/\/www\.fotmob\.com\/players\/\d+\/[^/\s]+$/i.test(u);
-  }
-  function playerIdFromUrl(u){
-    const m = String(u||'').match(/\/players\/(\d+)\//);
-    return m ? m[1] : null;
-  }
-
-  function parseCsv(text){
-    text = String(text || '').replace(/^\uFEFF/, '');
-    const lines = text.replace(/\r/g,'').split('\n').map(s=>s.trim()).filter(Boolean);
-    const out = [];
-    for(const line of lines){
-      let parts = []; let cur=''; let inQ=false;
-      for(let i=0;i<line.length;i++){
-        const ch = line[i];
-        if(ch === '"'){ inQ = !inQ; continue; }
-        if(ch === ',' && !inQ){ parts.push(cur.trim()); cur=''; continue; }
-        cur += ch;
-      }
-      parts.push(cur.trim());
-      if(parts.length === 1){
-        const url = normalizeUrl(parts[0]);
-        if(isPlayerUrl(url)) out.push({ name:'', url });
-        continue;
-      }
-      const name = parts[0] ? parts[0].replace(/^['"]|['"]$/g,'').trim() : '';
-      const url  = parts[1] ? normalizeUrl(parts[1].replace(/^['"]|['"]$/g,'').trim()) : '';
-      if(isPlayerUrl(url)) out.push({ name, url });
-    }
-    return out;
-  }
-
-  function refreshQueuedUI(){
-    const arr = Array.from(queued.values());
-    queuedCount.textContent = `Queued: ${arr.length}`;
-    queuedList.textContent = arr.map(x=>`• ${x.name ? x.name + ' — ' : ''}${x.url}`).join('\n');
-  }
-  function addPlayers(items){
-    let added = 0, skipped = 0;
-    for(const it of items){
-      if(!it || !it.url) { skipped++; continue; }
-      const url = normalizeUrl(it.url);
-      if(!isPlayerUrl(url)) { skipped++; continue; }
-      const prev = queued.get(url);
-      const name = (it.name || (prev && prev.name) || '').trim();
-      queued.set(url, { name, url });
-      added++;
-    }
-    refreshQueuedUI();
-    if(added || skipped) log(`CSV add: added ${added}, skipped ${skipped}`);
-    return added;
-  }
-
-  // CSV: upload or /players.csv
-  btnCsvAdd.addEventListener('click', async ()=>{
-    if(!csvFile.files || !csvFile.files[0]){ csvCount.textContent = 'No file selected'; return; }
-    const text = await csvFile.files[0].text();
-    const items = parseCsv(text);
-    const added = addPlayers(items);
-    csvCount.textContent = added ? `Loaded ${added} from CSV` : 'No valid rows';
-  });
-  btnCsvDefault.addEventListener('click', async ()=>{
-    try{
-      const res = await fetch('players.csv', { cache: 'no-store' });
-      if(!res.ok){ csvCount.textContent = 'players.csv not found'; return; }
-      const txt = await res.text();
-      const items = parseCsv(txt);
-      const added = addPlayers(items);
-      csvCount.textContent = added ? `Loaded ${added} from /players.csv` : 'No valid rows in /players.csv';
-    }catch(e){ csvCount.textContent = 'Error loading /players.csv'; }
-  });
-
-  // Paste
-  btnQueue.addEventListener('click', ()=>{
-    const text = urlsTA.value || '';
-    const rows = parseCsv(text);
-    const loneUrls = text.split('\n').map(s=>normalizeUrl(s.trim())).filter(isPlayerUrl).map(url=>({ name:'', url }));
-    const items = rows.concat(loneUrls);
-    const added = addPlayers(items);
-    log(`Added ${added} players from paste.`);
-  });
-  btnClear.addEventListener('click', ()=>{ queued.clear(); refreshQueuedUI(); log('Cleared queued players.'); });
-
-  // API calls
-  async function discover(urls){
-    const res = await fetch('/.netlify/functions/discover', {
-      method: 'POST', headers: { 'content-type':'application/json' }, body: JSON.stringify({ urls })
-    });
-    const txt = await res.text();
-    try { return JSON.parse(txt); } catch { return { ok:false, error:'Bad JSON from /discover', raw: txt.slice(0,300) }; }
-  }
-  async function check(matchUrl, playerId, playerName){
-    const res = await fetch('/.netlify/functions/check', {
-      method: 'POST', headers: { 'content-type':'application/json' }, body: JSON.stringify({ matchUrl, playerId, playerName })
-    });
-    const txt = await res.text();
-    try { return JSON.parse(txt); } catch { return { error:'Bad JSON from /check', raw: txt.slice(0,300) }; }
-  }
-
-  // helpers
-  function npg(goals, pg){ goals = goals|0; pg = pg|0; return Math.max(0, goals - pg); }
-  function dedupMatchUrls(arr){
-    const seen = new Set();
-    const out = [];
-    for(const u of arr || []){
-      const id = (String(u||'').match(/\/match\/(\d+)/)||[])[1] || String(u||'');
-      if(seen.has(id)) continue;
-      seen.add(id);
-      out.push(u);
-    }
-    return out;
-  }
-
-  function aggregate(playerName, playerUrl, rows){
-    const agg = { player_name: playerName||'', player_url: playerUrl, checked: 0, potm: 0, goals: 0, pg: 0, assists: 0, yc: 0, rc: 0, fmp: 0 };
-    for(const r of rows){
-      if(r.error) continue;
-      if(!(r.league_allowed && r.within_season_2025_26)) continue;
-      agg.checked += 1;
-      if(r.player_is_pom) agg.potm += 1;
-      const ps = r.player_stats || {};
-      agg.goals   += (ps.goals|0);
-      agg.pg      += (ps.penalty_goals|0);
-      agg.assists += (ps.assists|0);
-      agg.yc      += (ps.yellow_cards|0);
-      agg.rc      += (ps.red_cards|0);
-      if(ps.full_match_played) agg.fmp += 1;
-    }
-    agg.npg = npg(agg.goals, agg.pg);
-    return agg;
-  }
-
-  async function poolLimit(concurrency, tasks, worker, spreadMs=0){
-    const ret = []; let i = 0; const running = new Set();
-    return new Promise((resolve)=>{
-      const runNext = async ()=>{
-        if(i >= tasks.length && running.size===0){ resolve(ret); return; }
-        while(running.size < concurrency && i < tasks.length){
-          const idx = i++; const t = tasks[idx];
-          const p = (async ()=>{ if(spreadMs) await sleep(spreadMs); return worker(t, idx); })()
-            .then(v=>{ ret[idx]=v; running.delete(p); runNext(); })
-            .catch(e=>{ ret[idx]={ error:String(e) }; running.delete(p); runNext(); });
-          running.add(p);
-        }
-      };
-      runNext();
-    });
-  }
-
-  function chunk(arr, size){
-    const out = [];
-    for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i, i+size));
-    return out;
-  }
-
-  function buildMapsFromDiscover(discPlayers, queuedMap){
-    const byUrl = new Map();
-    const byId  = new Map();
-    for(const p of discPlayers || []){
-      const normUrl = normalizeUrl(p.player_url || '');
-      const idStr = p.player_id != null ? String(p.player_id) : playerIdFromUrl(normUrl);
-      const injectedName = (queuedMap.get(normUrl) && queuedMap.get(normUrl).name) || p.player_name || '';
-      const item = {
-        url: normUrl,
-        name: injectedName,
-        player_id: p.player_id || (idStr ? Number(idStr) : null),
-        match_urls: dedupMatchUrls(Array.isArray(p.match_urls) ? p.match_urls : [])
-      };
-      byUrl.set(normUrl, item);
-      if(idStr) byId.set(idStr, item);
-    }
-    return { byUrl, byId };
-  }
-
-  // Run flow with batched discover + retries + throttled checks
-  btnRun.addEventListener('click', async ()=>{
-    setStatus('Running…'); log('Starting…');
-
-    const players = Array.from(queued.values());
-    if(players.length===0){ log('No players queued.'); setStatus('Idle'); return; }
-
-    kpiPlayers.textContent = `Players: ${players.length}`;
-
-    // --- batched discover with retries ---
-    const batches = chunk(players, DISCOVER_BATCH_SIZE);
-    const combinedByUrl = new Map();
-    const combinedById  = new Map();
-    let totalMatches = 0;
-
-    for(let bi=0; bi<batches.length; bi++){
-      const batch = batches[bi];
-      const urls = batch.map(p=>p.url);
-
-      let attempt = 0, ok = false, disc = null;
-      while(attempt <= DISCOVER_RETRIES && !ok){
-        attempt++;
-        log(`Discover batch ${bi+1}/${batches.length} (try ${attempt}/${DISCOVER_RETRIES+1}) — players: ${urls.length}`);
-        disc = await discover(urls);
-        ok = !!disc && disc.ok !== false;
-        if(!ok){
-          log(`  ↪ failed: ${disc && (disc.error || disc.raw) || 'unknown'}`);
-          if(attempt <= DISCOVER_RETRIES) await sleep(DISCOVER_RETRY_DELAY);
-        }
-      }
-      if(!ok) continue;
-
-      const { byUrl, byId } = buildMapsFromDiscover(disc.players || [], queued);
-      for(const [k,v] of byUrl) {
-        combinedByUrl.set(k, v);
-        totalMatches += (v.match_urls ? v.match_urls.length : 0);
-      }
-      for(const [k,v] of byId) combinedById.set(k, v);
-
-      kpiMatches.textContent = `Matches found: ${totalMatches}`;
-      for(const p of batch){
-        const norm = normalizeUrl(p.url);
-        const idStr = playerIdFromUrl(norm);
-        const d = combinedByUrl.get(norm) || (idStr ? combinedById.get(idStr) : null);
-        const c = d && d.match_urls ? d.match_urls.length : 0;
-        log(`  • ${p.name || '(name)'} — discovered ${c} matches`);
-        // Per-player empty? try a tiny per-player re-discover once
-        if(c === 0){
-          await sleep(150);
-          const single = await discover([norm]);
-          if(single && single.ok !== false){
-            const { byUrl:bu2, byId:bi2 } = buildMapsFromDiscover(single.players || [], queued);
-            const d2 = bu2.get(norm) || (idStr ? bi2.get(idStr) : null);
-            const c2 = d2 && d2.match_urls ? d2.match_urls.length : 0;
-            if(d2){
-              combinedByUrl.set(norm, d2);
-              if(idStr) combinedById.set(idStr, d2);
-              totalMatches += c2;
-              kpiMatches.textContent = `Matches found: ${totalMatches}`;
-              log(`    ↪ retry found ${c2} matches`);
-            }
-          }
-        }
-      }
+    function setTag(text, klass){
+      statusTag.textContent = text;
+      statusTag.className = "badge " + (klass || "");
     }
 
-    log(`Total matches found (all batches): ${totalMatches}`);
-    kpiMatches.textContent = `Matches found: ${totalMatches}`;
-
-    // --- checks (throttled) ---
-    let checkedCount = 0;
-    const perPlayer = [];
-
-    for(const p of players){
-      const norm = normalizeUrl(p.url);
-      const idStr = playerIdFromUrl(norm);
-      let d = combinedByUrl.get(norm) || (idStr ? combinedById.get(idStr) : null);
-      if(!d){
-        d = { match_urls: [], player_id: idStr ? Number(idStr) : null, name: p.name, url: norm };
-      }
-      const matches = d.match_urls || [];
-
-      const rows = await poolLimit(CHECK_CONCURRENCY, matches, async (mUrl)=>{
-        await sleep(CHECK_SPREAD_MS);
-        const r = await check(mUrl, d.player_id, d.name || '');
-        checkedCount++;
-        if(checkedCount % 3 === 0) kpiChecked.textContent = `Checked: ${checkedCount}`;
-        return r;
-      }, CHECK_SPREAD_MS);
-
-      const agg = aggregate(d.name || '', p.url, rows);
-      perPlayer.push({ rows, agg });
-      log(`• ${agg.player_name || '(name)'}: checked ${agg.checked}, POTM ${agg.potm} | Goals ${agg.goals} (NPG ${agg.npg}, PG ${agg.pg}) | Ast ${agg.assists} | YC ${agg.yc} | RC ${agg.rc} | FMP ${agg.fmp}`);
+    function csvBlobDownload(filename, text){
+      const blob = new Blob([text], { type:"text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href=url; a.download=filename;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     }
 
-    const totals = perPlayer.map(x=>x.agg);
-    renderTable(totals);
-    const sumPotm = totals.reduce((a,b)=>a + (b.potm||0),0);
-    const sumChecked = totals.reduce((a,b)=>a + (b.checked||0),0);
-    summary.innerHTML = `Summary: ${totals.map(t=>`• ${escapeHtml(t.player_name||'(name)')}: checked ${t.checked}, POTM ${t.potm} | Goals ${t.goals} (NPG ${t.npg}, PG ${t.pg}) | Ast ${t.assists} | YC ${t.yc} | RC ${t.rc} | FMP ${t.fmp}`).join('<br>')}<br><br><span class="muted">Players: ${totals.length} | Total POTM: ${sumPotm} | Total matches checked: ${sumChecked}</span>`;
-
-    // downloads
-    const rowsFlat = [];
-    for(const block of perPlayer){
-      const pname = block.agg.player_name || '';
-      const purl = block.agg.player_url || '';
-      for(const r of block.rows){
-        rowsFlat.push({
-          player_name: pname,
-          player_url: purl,
-          match_url: r.match_url || '',
-          match_title: r.match_title || '',
-          league_label: r.league_label || '',
-          match_datetime_utc: r.match_datetime_utc || '',
-          potm: !!r.player_is_pom,
-          rating: (r.player_rating!=null? r.player_rating : ''),
-          goals: r.player_stats ? r.player_stats.goals : '',
-          pg: r.player_stats ? r.player_stats.penalty_goals : '',
-          npg: r.player_stats ? Math.max(0, (r.player_stats.goals|0) - (r.player_stats.penalty_goals|0)) : '',
-          assists: r.player_stats ? r.player_stats.assists : '',
-          yc: r.player_stats ? r.player_stats.yellow_cards : '',
-          rc: r.player_stats ? r.player_stats.red_cards : '',
-          fmp: r.player_stats ? !!r.player_stats.full_match_played : ''
+    async function safeFetchJSON(url, bodyObj){
+      try{
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "content-type":"application/json", "accept":"application/json" },
+          body: JSON.stringify(bodyObj || {})
         });
+        const text = await res.text();
+        let data = null; try { data = text ? JSON.parse(text) : null; } catch {}
+        return { ok: res.ok, status: res.status, statusText: res.statusText, text, data };
+      }catch(e){
+        return { ok:false, status:0, statusText:String(e), text:String(e), data:null };
       }
     }
 
-    btnDownloadCSV.onclick = ()=>{
-      const lines = ['player_name,player_url,checked,potm,goals,npg,pg,assists,yc,rc,fmp'];
-      for(const t of totals){
-        lines.push([
-          csvEscape(t.player_name||''), csvEscape(t.player_url||''), t.checked, t.potm, t.goals, t.npg, t.pg, t.assists, t.yc, t.rc, t.fmp
-        ].join(','));
+    function summarisePlayers(players){
+      if (!players || !players.length) return "No players.";
+      return players.map(p=>{
+        const d=p.debug||{};
+        return `• ${p.player_name || "(unknown)"} — matches:${(p.match_urls||[]).length}  [XHR:${d.xhr_hit?"✓":"×"} PF:${d.page_fetch?"✓":"×"} anchors:${d.anchors_found||0} nextP:${d.player_next_ids||0} nextT:${d.team_next_ids||0}]`;
+      }).join("\n");
+    }
+
+    function fillSummaryTable(rows){
+      tbody.innerHTML = "";
+      if (!rows.length){
+        tbody.innerHTML = '<tr><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td></tr>';
+        return;
       }
-      download('totals.csv', lines.join('\n'), 'text/csv');
+      for (const r of rows){
+        const tr = document.createElement("tr");
+        const td1 = document.createElement("td"); td1.textContent = r.player_name || "";
+        const td2 = document.createElement("td"); td2.textContent = String(r.potm_total ?? 0);
+        const td3 = document.createElement("td"); td3.textContent = String(r.highest_rating_total ?? 0);
+        tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+        tbody.appendChild(tr);
+      }
+    }
+
+    function csvFromPOM(bundles){
+      const headers = ["player_name","player_url","match_url","match_title","league_label","match_datetime_utc","player_rating"];
+      const lines = [headers.join(",")];
+      for (const b of bundles){
+        const pname = (b.player_name || "").replace(/,/g," ");
+        const purl = b.player_url || "";
+        for (const r of b.pom_2025_26_domestic || []){
+          lines.push([pname, purl, r.match_url || "", (r.match_title || "").replace(/,/g," "),
+            (r.league_label || "").replace(/,/g," "), r.match_datetime_utc || "", r.player_rating==null?"":String(r.player_rating)].join(","));
+        }
+      }
+      return lines.join("\n");
+    }
+
+    function csvFromHighest(bundles){
+      const headers = ["player_name","player_url","match_url","match_title","league_label","match_datetime_utc","player_rating","max_rating"];
+      const lines = [headers.join(",")];
+      for (const b of bundles){
+        const pname = (b.player_name || "").replace(/,/g," ");
+        const purl = b.player_url || "";
+        for (const r of b.highest_2025_26_domestic || []){
+          lines.push([pname, purl, r.match_url || "", (r.match_title || "").replace(/,/g," "),
+            (r.league_label || "").replace(/,/g," "), r.match_datetime_utc || "",
+            r.player_rating==null?"":String(r.player_rating),
+            r.max_rating==null?"":String(r.max_rating)].join(","));
+        }
+      }
+      return lines.join("\n");
+    }
+
+    function csvFromSummary(totals){
+      return ["player_name,potm_count"].concat(
+        totals.map(t => `${(t.player_name||"").replace(/,/g," ")},${t.potm_total||0}`)
+      ).join("\n");
+    }
+
+    async function runChecksForPlayer(player, concurrency){
+      const queue = [...(player.match_urls || [])];
+      const results = [];
+      let inFlight = 0, done = 0;
+
+      return new Promise((resolve)=>{
+        const pump = async ()=>{
+          if (queue.length===0 && inFlight===0) return resolve(results);
+          while (inFlight < concurrency && queue.length){
+            const matchUrl = queue.shift();
+            inFlight++;
+            safeFetchJSON("/.netlify/functions/check", {
+              playerId: player.player_id,
+              playerName: player.player_name,
+              matchUrl
+            })
+              .then(({ ok, status, statusText, text, data })=>{
+                if (!ok || !data){
+                  results.push({ match_url: matchUrl, error: ok ? "Empty response" : `HTTP ${status} ${statusText}`, raw: text || null });
+                } else {
+                  results.push(data);
+                }
+              })
+              .catch(e=> results.push({ match_url: matchUrl, error: String(e) }))
+              .finally(()=>{
+                inFlight--; done++;
+                statusEl.textContent = `Checking ${player.player_name}: ${done}/${player.match_urls.length}…`;
+                pump();
+              });
+          }
+        };
+        pump();
+      });
+    }
+
+    async function calendarFallback(fromStr, toStr, chunkDays){
+      function* chunks(from,to,size){
+        const a=new Date(Date.UTC(+from.slice(0,4), +from.slice(4,6)-1, +from.slice(6,8)));
+        const b=new Date(Date.UTC(+to.slice(0,4), +to.slice(4,6)-1, +to.slice(6,8)));
+        let cur=new Date(a);
+        while(cur<=b){
+          const end=new Date(cur); end.setUTCDate(end.getUTCDate()+size-1);
+          const F=yyyymmdd(cur), T=yyyymmdd(end>b?b:end);
+          yield {from:F,to:T};
+          cur.setUTCDate(cur.getUTCDate()+size);
+        }
+      }
+      const union = new Set();
+      const ranges = Array.from(chunks(fromStr,toStr,chunkDays));
+      for (let i=0;i<ranges.length;i++){
+        const r = ranges[i];
+        statusEl.textContent = `Calendar fallback ${i+1}/${ranges.length} (${r.from}..${r.to})…`;
+        const cal = await safeFetchJSON("/.netlify/functions/calendar", { from:r.from, to:r.to });
+        if (cal.ok && cal.data && Array.isArray(cal.data.match_urls)){
+          cal.data.match_urls.forEach(u=> union.add(u));
+        }
+      }
+      return Array.from(union);
+    }
+
+    // ---------- Main runner ----------
+    btnRun.onclick = async ()=>{
+      try{
+        btnRun.disabled = true; dlP.disabled = dlH.disabled = dlS.disabled = dlT.disabled = true;
+        lastCsvP = lastCsvH = lastCsvS = "";
+        out.textContent = "—"; statusEl.textContent = "Starting…"; summaryBox.textContent = "—"; setTag("Working…","warn");
+
+        const urls = parseUrls();
+        if (!urls.length){ statusEl.textContent="Paste at least one player URL."; setTag("Idle"); btnRun.disabled=false; return; }
+
+        const fromInput = (document.getElementById("from").value || "20250701").trim();
+        const toInput = (document.getElementById("to").value || todayUTC()).trim();
+        const chunkDays = Math.max(1, Number(document.getElementById("chunkDays").value || 7));
+        const maxMatchesCap = Math.max(0, Number(document.getElementById("maxMatches").value || 80));
+        const concurrency = Math.max(1, Number(document.getElementById("concurrency").value || 3));
+
+        // 1) Discover
+        setTag("Discovering…","warn");
+        const disc = await safeFetchJSON("/.netlify/functions/discover", { urls, maxMatches: maxMatchesCap });
+        if (!disc.ok || !disc.data){
+          setTag("Discover error","err");
+          statusEl.textContent = `Discover error: HTTP ${disc.status} ${disc.statusText}\n` + (disc.data ? JSON.stringify(disc.data, null, 2) : (disc.text || "(empty response)"));
+          btnRun.disabled = false; return;
+        }
+        let players = disc.data.players || [];
+        summaryBox.textContent = summarisePlayers(players);
+
+        // 2) Fallback calendar for zero-hit players
+        const need = players.filter(p => !p.match_urls || p.match_urls.length===0);
+        if (need.length){
+          const union = await calendarFallback(fromInput, toInput, chunkDays);
+          players = players.map(p => {
+            if (p.match_urls && p.match_urls.length) return p;
+            return { ...p, match_urls: (maxMatchesCap>0? union.slice(0,maxMatchesCap) : union), debug: { ...(p.debug||{}), fallback_calendar:true, fallback_total:union.length } };
+          });
+          summaryBox.textContent += `\n(Fallback) Added calendar matches for ${need.length} player(s).`;
+        }
+
+        // 3) Check
+        const bundles = [];
+        for (const p of players){
+          const checked = await runChecksForPlayer(p, concurrency);
+          const valid = checked.filter(r => r.league_allowed && r.within_season_2025_26);
+          const hitsPotm = valid.filter(r => r.player_is_pom);
+          const hitsHighest = valid.filter(r => r.has_highest_rating);
+
+          bundles.push({
+            player_url: p.player_url,
+            player_name: p.player_name,
+            checked_matches: checked.length,
+            pom_2025_26_domestic_count: hitsPotm.length,
+            highest_rating_count: hitsHighest.length,
+            pom_2025_26_domestic: hitsPotm,
+            highest_2025_26_domestic: hitsHighest,
+            raw: checked,
+            debug: p.debug
+          });
+        }
+
+        // 4) Totals, summary text, CSVs, table
+        const totals = bundles.map(b => ({
+          player_name: b.player_name,
+          potm_total: b.pom_2025_26_domestic_count,
+          highest_rating_total: b.highest_rating_count
+        }));
+        const summary = {
+          players_processed: bundles.length,
+          total_pom_hits_2025_26_domestic: bundles.reduce((a,b)=>a+(b.pom_2025_26_domestic_count||0),0),
+          total_highest_rating_hits_2025_26_domestic: bundles.reduce((a,b)=>a+(b.highest_rating_count||0),0)
+        };
+
+        const kpis = bundles.map(b =>
+          `• ${b.player_name}: checked ${b.checked_matches}, POTM ${b.pom_2025_26_domestic_count}, Highest ${b.highest_rating_count}`
+          + (b.debug?.fallback_calendar ? `  [fallback: ${b.debug.fallback_total} matches]` : "")
+        ).join("\n");
+
+        out.textContent = JSON.stringify({ results: bundles, totals, summary }, null, 2);
+        summaryBox.textContent = kpis || "No results.";
+        setTag("Done","ok");
+        statusEl.textContent = "Completed.";
+
+        // CSVs
+        lastCsvP = csvFromPOM(bundles);
+        lastCsvH = csvFromHighest(bundles);
+        lastCsvS = csvFromSummary(totals);
+        dlP.disabled = !lastCsvP; dlH.disabled = !lastCsvH; dlS.disabled = !lastCsvS; dlT.disabled = !lastCsvS;
+
+        // Table
+        fillSummaryTable(totals);
+
+        btnRun.disabled = false;
+      }catch(e){
+        setTag("Error","err");
+        statusEl.textContent = String(e);
+        btnRun.disabled = false;
+      }
     };
-    btnDownloadJSON.onclick = ()=> download('totals.json', JSON.stringify({ totals }, null, 2), 'application/json');
 
-    btnDownloadRowsCsv.onclick = ()=>{
-      const headers = Object.keys(rowsFlat[0] || {player_name:'',player_url:'',match_url:'',match_title:'',league_label:'',match_datetime_utc:'',potm:'',rating:'',goals:'',pg:'',npg:'',assists:'',yc:'',rc:'',fmp:''});
-      const lines = [ headers.join(',') ];
-      for(const r of rowsFlat){ lines.push(headers.map(h=>csvEscape(r[h])).join(',')); }
-      download('rows.csv', lines.join('\n'), 'text/csv');
-    };
-    btnDownloadRowsJson.onclick = ()=> download('rows.json', JSON.stringify(rowsFlat, null, 2), 'application/json');
-
-    setStatus('Done');
-  });
-
-  function download(filename, text, mime='text/plain'){
-    const blob = new Blob([text], { type: mime });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    a.click();
-    setTimeout(()=>URL.revokeObjectURL(a.href), 500);
-  }
-})();
-</script>
+    // Download handlers
+    dlP.onclick = ()=>{ if (lastCsvP) csvBlobDownload("potm_results_2025_26.csv", lastCsvP); };
+    dlH.onclick = ()=>{ if (lastCsvH) csvBlobDownload("highest_rating_results_2025_26.csv", lastCsvH); };
+    dlS.onclick = ()=>{ if (lastCsvS) csvBlobDownload("summary_potm_2025_26.csv", lastCsvS); };
+    dlT.onclick = ()=>{ if (lastCsvS) csvBlobDownload("summary_table_potm_2025_26.csv", lastCsvS); };
+  })();
+  </script>
 </body>
 </html>
