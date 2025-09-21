@@ -181,31 +181,40 @@
 
       const grid=document.createElement('div'); grid.className='grid';
       const table=document.createElement('table'); table.innerHTML=`
-        <thead>
-          <tr>
-            <th>Match</th><th>League</th><th>Date (UTC)</th>
-            <th>POTM?</th><th>Rating</th>
-            <th>G</th><th>NPG</th><th>PG</th><th>A</th><th>YC</th><th>RC</th><th>FMP</th><th>Source</th>
-          </tr>
-        </thead>
-        <tbody></tbody>`;
+      <thead>
+  <tr>
+    <th>Match</th>
+    <th>League</th>
+    <th>POTM?</th>
+    <th>Rating</th>
+    <th>G</th>
+    <th>NPG</th>
+    <th>PG</th>
+    <th>A</th>
+    <th>YC</th>
+    <th>RC</th>
+    <th>FMP</th>
+  </tr>
+    </thead>
+    <tbody></tbody>`;
       const tb=table.querySelector('tbody');
       for(const r of (p.raw||[])){
         const s=r.player_stats||{};
         const tr=document.createElement('tr'); tr.innerHTML=`
-          <td><a href="${r.match_url}" target="_blank" rel="noopener">${r.match_title||r.resolved_match_id||'match'}</a></td>
-          <td>${r.league_label??''}</td>
-          <td>${r.match_datetime_utc??''}</td>
-          <td>${r.player_is_pom?'✅':''}</td>
-          <td>${(r.player_rating!=null?Number(r.player_rating).toFixed(2):'')}</td>
-          <td>${s.goals??''}</td>
-          <td>${Math.max(0, Number(s.goals||0)-Number(s.penalty_goals||0))}</td>
-          <td>${s.penalty_goals??''}</td>
-          <td>${s.assists??''}</td>
-          <td>${s.yellow_cards??''}</td>
-          <td>${s.red_cards??''}</td>
-          <td>${s.full_match_played?'90+':''}</td>
-          <td class="muted small">${r.source||''}</td>`;
+         tr.innerHTML = `
+  <td>${r.match_title || r.resolved_match_id || ''}</td>
+  <td>${r.league_label ?? ''}</td>
+  <td>${r.player_is_pom ? "✓" : ""}</td>
+  <td>${r.player_rating ?? ''}</td>
+  <td>${s.goals ?? ''}</td>
+  <td>${Math.max(0, Number(s.goals || 0) - Number(s.penalty_goals || 0))}</td>
+  <td>${s.penalty_goals ?? ''}</td>
+  <td>${s.assists ?? ''}</td>
+  <td>${s.yellow_cards ?? ''}</td>
+  <td>${s.red_cards ?? ''}</td>
+  <td>${s.full_match_played ? "✓" : ""}</td>
+`;
+
         tb.appendChild(tr);
       }
       grid.appendChild(table); card.appendChild(grid);
@@ -228,9 +237,9 @@
       return rows;
     };
     const toDetailsCSV=(res)=>{
-      const rows=[["player_name","player_url","match_url","match_title","league","date_utc","potm","rating","goals","npg","pg","assists","yc","rc","fmp","source"]];
+      const rows=[["player_name","player_url","match_url","match_title","league","potm","rating","goals","npg","pg","assists","yc","rc","fmp"]];
       for(const p of res){ for(const r of (p.raw||[])){ const s=r.player_stats||{};
-        rows.push([resolveName(p),p.player_url,r.match_url,r.match_title||r.resolved_match_id||'',r.league_label??'',r.match_datetime_utc??'',r.player_is_pom?"1":"0",(r.player_rating!=null?String(Number(r.player_rating).toFixed(2)):""),s.goals??'',Math.max(0, Number(s.goals||0)-Number(s.penalty_goals||0)),s.penalty_goals??'',s.assists??'',s.yellow_cards??'',s.red_cards??'',s.full_match_played?"1":"0",r.source||'']);
+        rows.push([resolveName(p),p.player_url,r.match_url,r.match_title||r.resolved_match_id||'',r.league_label??'',r.player_is_pom?"1":"0",(r.player_rating!=null?String(Number(r.player_rating).toFixed(2)):""),s.goals??'',Math.max(0, Number(s.goals||0)-Number(s.penalty_goals||0)),s.penalty_goals??'',s.assists??'',s.yellow_cards??'',s.red_cards??'',s.full_match_played?"1":"0"]);
       }} return rows;
     };
 
