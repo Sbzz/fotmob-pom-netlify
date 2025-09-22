@@ -5,118 +5,107 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>FotMob 2025–26 Stats Pipeline</title>
   <style>
-    :root{--bg:#0b0f14;--panel:#131a22;--muted:#223040;--text:#e7eef7;--sub:#a7b3c2;--accent:#69e0ff;--ok:#20c997;--warn:#ffc107;--err:#ff6b6b}
+    :root{
+      --bg:#0b0f14;--panel:#131a22;--muted:#223040;--text:#e7eef7;--sub:#a7b3c2;--accent:#69e0ff;--ok:#20c997;--warn:#ffc107;--err:#ff6b6b;
+    }
     html,body{height:100%}
-    body{margin:0;background:linear-gradient(180deg,#0b0f14,#0d141c 30%,#0b0f14);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
-    a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
-    .wrap{max-width:1200px;margin:0 auto;padding:24px}
-    .title{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    body{margin:0;background:linear-gradient(180deg,#0b0f14,#0d141c 30%,#0b0f14);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji"}
+    a{color:var(--accent);text-decoration:none}
+    a:hover{text-decoration:underline}
+    .wrap{max-width:1100px;margin:0 auto;padding:24px}
+    .title{display:flex;gap:12px;align-items:center}
     .badge{padding:3px 8px;border:1px solid var(--muted);border-radius:999px;color:var(--sub);font-size:12px}
-
-    /* Top grid */
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
-    @media (max-width:980px){.grid{grid-template-columns:1fr}}
-
+    .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}
     .card{background:var(--panel);border:1px solid var(--muted);border-radius:16px;padding:16px}
-
-    /* Two consistent columns inside each section */
-    .form-grid{display:grid;grid-template-columns:minmax(360px,1fr) minmax(360px,1fr);gap:16px;align-items:start}
-    @media (max-width:980px){.form-grid{grid-template-columns:1fr}}
-    .stack{display:flex;flex-direction:column;gap:10px}
-    .row{display:flex;gap:10px;flex-wrap:wrap}
-
-    textarea{width:100%;min-height:180px;background:#0e141c;color:var(--text);border:1px solid var(--muted);border-radius:12px;padding:10px;resize:vertical}
-    input[type=file],input[type=number]{border:1px solid var(--muted);border-radius:10px;padding:10px;background:#0e141c;color:var(--sub);width:100%}
-
+    .row{display:flex;gap:12px;flex-wrap:wrap}
+    .row > *{flex:1 1 220px}
+    textarea{width:100%;min-height:140px;background:#0e141c;color:var(--text);border:1px solid var(--muted);border-radius:10px;padding:10px;resize:vertical}
+    input[type="file"]{border:1px dashed var(--muted);border-radius:10px;padding:10px;background:#0e141c;color:var(--sub)}
     button{background:#172231;border:1px solid #263446;color:var(--text);padding:10px 14px;border-radius:10px;cursor:pointer}
-    .primary{background:linear-gradient(180deg,#1b6aa5,#124a75);border-color:#0e3c5f}
-    .btn{width:100%}
+    button.primary{background:linear-gradient(180deg,#1b6aa5,#124a75);border-color:#0e3c5f}
     button:disabled{opacity:.6;cursor:not-allowed}
-
     .kpis{display:flex;gap:12px;flex-wrap:wrap}
     .kpi{background:#0f1722;border:1px solid var(--muted);padding:10px 14px;border-radius:12px;min-width:140px}
     .kpi .num{font-weight:700;font-size:20px}
-
     .logs{max-height:280px;overflow:auto;border:1px solid var(--muted);border-radius:12px;background:#0c121a;padding:10px}
     .log-line{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--sub)}
-    .log-line.ok{color:var(--ok)} .log-line.warn{color:var(--warn)} .log-line.err{color:var(--err)}
-
+    .log-line.ok{color:var(--ok)}
+    .log-line.warn{color:var(--warn)}
+    .log-line.err{color:var(--err)}
     table{width:100%;border-collapse:separate;border-spacing:0 8px}
     th,td{text-align:left;padding:8px 10px}
     thead th{color:var(--sub);font-weight:600;border-bottom:1px solid var(--muted)}
     tbody tr{background:#0f1722;border:1px solid var(--muted)}
     tbody td:first-child{border-top-left-radius:8px;border-bottom-left-radius:8px}
     tbody td:last-child{border-top-right-radius:8px;border-bottom-right-radius:8px}
-
     .downloads{display:flex;gap:8px;flex-wrap:wrap}
     .hint{color:var(--sub);font-size:13px}
     .pill{display:inline-block;padding:2px 8px;border:1px solid var(--muted);border-radius:999px;color:var(--sub);font-size:12px}
-    details>summary{cursor:pointer;color:var(--sub);margin-bottom:8px}
+    details > summary{cursor:pointer;color:var(--sub);margin-bottom:8px}
     .footer{opacity:.8;color:var(--sub);margin-top:24px}
+    .spinner{width:16px;height:16px;border:2px solid #395670;border-top-color:transparent;border-radius:50%;display:inline-block;animation:spin 0.9s linear infinite;vertical-align:middle}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    code.inline{background:#0c121a;border:1px solid var(--muted);border-radius:6px;padding:2px 6px}
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="title">
       <h1 style="margin:0">FotMob 2025–26 Stats Pipeline</h1>
-      <span class="badge">Season: 2025‑07‑01 → 2026‑06‑30</span>
+      <span class="badge">Season window: 2025‑07‑01 → 2026‑06‑30</span>
       <span class="badge">Leagues: PL(47) · LaLiga(87) · Bundesliga(54) · Serie A(55) · Ligue 1(53)</span>
     </div>
 
     <div class="grid" style="margin-top:18px">
-      <!-- 1) Provide players -->
       <div class="card">
         <h3 style="margin-top:0">1) Provide players</h3>
-        <div class="form-grid">
-          <div class="stack">
-            <label class="hint">Paste <b>player URLs</b> (one per line) or <b>CSV</b> (<code class="inline">name,url</code> or just <code class="inline">url</code>)</label>
-            <textarea id="paste" placeholder="https://www.fotmob.com/players/1467236/lamine-yamal\nhttps://www.fotmob.com/players/846033/vinicius-junior"></textarea>
+        <div class="row">
+          <div>
+            <label class="hint">Paste <b>player URLs</b> (one per line) or <b>CSV</b> (<code class="inline">name,url</code>)</label>
+            <textarea id="paste" placeholder="Lamine Yamal,https://www.fotmob.com/players/1467236/lamine-yamal
+Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textarea>
           </div>
-          <div class="stack">
-            <label class="hint">Load from file / site</label>
-            <input type="file" id="file" accept=".csv,text/csv,text/plain" />
-            <div class="row">
-              <button id="load-players" class="btn" title="Fetch /players.csv">Load /players.csv</button>
+          <div>
+            <label class="hint">…or load a file</label>
+            <input type="file" id="file" accept=".csv,text/csv" />
+            <div class="hint" style="margin-top:8px">Place <code class="inline">players.csv</code> in the site root to fetch via <a href="/players.csv" target="_blank">/players.csv</a>.</div>
+            <div class="row" style="margin-top:10px">
+              <button id="load-players" title="Fetch /players.csv">Load /players.csv</button>
+              <button id="clear" title="Clear input">Clear</button>
             </div>
-            <div class="row">
-              <button id="load-urls" class="btn" title="Fetch /url.csv">Load /url.csv</button>
-            </div>
-            <div class="row">
-              <button id="clear" class="btn">Clear</button>
-              <button id="reset" class="btn">Reset</button>
-            </div>
-            <div class="hint">URLs are normalized (strip locale/query/hash) → <code class="inline">/players/&lt;id&gt;/&lt;slug&gt;</code>. Duplicates dropped.</div>
           </div>
         </div>
+        <details style="margin-top:10px">
+          <summary>Input rules (click to expand)</summary>
+          <ul class="hint">
+            <li>Accepts header or no header. Either <code class="inline">name,url</code> rows or a plain list of URLs.</li>
+            <li>Normalization fixes locale segments, queries, hashes, and trailing slashes.</li>
+            <li>Canonical form: <code class="inline">https://www.fotmob.com/players/&lt;id&gt;/&lt;slug&gt;</code></li>
+          </ul>
+        </details>
       </div>
 
-      <!-- 2) Run -->
       <div class="card">
         <h3 style="margin-top:0">2) Run</h3>
-        <div class="form-grid">
-          <div class="stack">
+        <div class="row">
+          <div>
             <label class="hint">Batching / throttling</label>
             <div class="row">
-              <div style="flex:1 1 160px">
+              <div>
                 <small class="hint">DISCOVER_BATCH_SIZE</small>
-                <input id="batch-size" type="number" min="1" max="10" value="1" />
+                <input id="batch-size" type="number" min="1" max="10" value="4" style="width:100%;background:#0e141c;color:var(--text);border:1px solid var(--muted);border-radius:8px;padding:6px" />
               </div>
-              <div style="flex:1 1 160px">
+              <div>
                 <small class="hint">CHECK_CONCURRENCY</small>
-                <input id="check-concurrency" type="number" min="1" max="5" value="2" />
+                <input id="check-concurrency" type="number" min="1" max="5" value="2" style="width:100%;background:#0e141c;color:var(--text);border:1px solid var(--muted);border-radius:8px;padding:6px" />
               </div>
             </div>
           </div>
-          <div class="stack">
+          <div>
             <label class="hint">Actions</label>
             <div class="row">
-              <button id="run" class="primary btn">Run Pipeline</button>
-            </div>
-            <div class="row">
-              <button id="stop" class="btn">Stop</button>
-            </div>
-            <div class="row">
-              <button id="reset2" class="btn">Reset</button>
+              <button id="run" class="primary">Run Pipeline</button>
+              <button id="stop">Stop</button>
             </div>
           </div>
         </div>
@@ -197,83 +186,456 @@
       </details>
     </div>
 
-    <div class="footer">Backend: <code>/.netlify/functions/discover</code> and <code>/.netlify/functions/check</code>. Frontend handles retries, throttling, de‑dup, and exports. Rows now include only <em>appearances</em> (DNP filtered).</div>
+    <div class="footer">Backend: <code class="inline">/.netlify/functions/discover</code> and <code class="inline">/.netlify/functions/check</code> (season + league filtering happens server‑side). Frontend handles retries, throttling, de‑dup, and exports.</div>
   </div>
 
 <script>
-(()=>{
-  const $=s=>document.querySelector(s); const sleep=ms=>new Promise(r=>setTimeout(r,ms)); const jitter=(a=120,b=320)=>Math.floor(Math.random()*(b-a+1))+a;
-  const allowedLeagueIds=new Set([47,87,54,55,53]); const SEASON_START=new Date('2025-07-01T00:00:00Z'); const SEASON_END=new Date('2026-06-30T23:59:59Z');
-  const logEl=$('#logs'); function log(m,l='info'){const d=document.createElement('div'); d.className=`log-line ${l==='ok'?'ok':l==='warn'?'warn':l==='err'?'err':''}`; d.textContent=`[${new Date().toISOString().replace('T',' ').replace('Z','')}] ${m}`; logEl.appendChild(d); logEl.scrollTop=logEl.scrollHeight;}
-  function clearLogs(){logEl.innerHTML='';}
+(() => {
+  // ===== Utilities =====
+  const $ = sel => document.querySelector(sel);
+  const $$ = sel => document.querySelectorAll(sel);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const jitter = (min=150,max=450)=> Math.floor(Math.random()*(max-min+1))+min;
+  const allowedLeagueIds = new Set([47,87,54,55,53]);
+  const SEASON_START = new Date('2025-07-01T00:00:00Z');
+  const SEASON_END   = new Date('2026-06-30T23:59:59Z');
 
-  function stripBOM(s){return (s&&s.charCodeAt(0)===0xFEFF)?s.slice(1):s}
-  function looksLikeUrl(s){try{const u=new URL(s.trim());return /fotmob\.com/.test(u.hostname)}catch{return false}}
-  function parseCsv(text){text=stripBOM(text||'').replace(/\r\n/g,'\n').trim(); if(!text) return []; const lines=text.split(/\n+/).map(s=>s.trim()).filter(Boolean);
-    const allUrl=lines.every(ln=>looksLikeUrl(ln)||/,\s*https?:\/\//.test(ln)); if(allUrl && !/,/.test(lines[0])) return lines.map(u=>({name:'',url:u}));
-    const rows=[]; let i=0,cur='',inQ=false,rec=[]; const pushCell=()=>{rec.push(cur);cur=''}; const pushRow=()=>{rows.push(rec);rec=[]}; while(i<text.length){const ch=text[i++]; if(inQ){ if(ch==='"'){ if(text[i]==='"'){cur+='"';i++} else inQ=false } else cur+=ch } else { if(ch==='"') inQ=true; else if(ch===',') pushCell(); else if(ch==='\n'){ pushCell(); pushRow(); } else cur+=ch } } pushCell(); if(rec.length) pushRow(); while(rows.length && rows[rows.length-1].every(c=>!c.trim())) rows.pop(); let start=0; if(rows.length){ const hdr=rows[0].map(c=>c.toLowerCase().trim()); if(hdr.includes('url')||hdr.join(',')==='name,url') start=1; } const out=[]; for(let r=start;r<rows.length;r++){ const cols=rows[r]; if(!cols.length) continue; let name='',url=''; if(cols.length===1){ if(looksLikeUrl(cols[0])) url=cols[0].trim(); else name=cols[0].trim(); } else { name=(cols[0]||'').trim(); url=(cols[1]||'').trim(); if(!url && looksLikeUrl(name)){ url=name; name=''; } } if(!url) continue; out.push({name,url}); } return out; }
-  function normalizePlayerUrl(raw){try{const u=new URL(raw.trim()); if(!/fotmob\.com$/.test(u.hostname)) return null; let p=u.pathname.replace(/^\/(?:[a-z]{2}-[A-Z]{2}|[a-z]{2})\//,'/'); const m=p.match(/\/players\/(\d+)\/([^\/?#]+)/); if(!m) return null; return `https://www.fotmob.com/players/${m[1]}/${decodeURIComponent(m[2]).toLowerCase()}`;}catch{return null}}
-  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-  function csvEscape(v){if(v==null) return ''; const s=String(v); return /[",\n]/.test(s)? '"'+s.replace(/"/g,'""')+'"':s}
-  function toCSV(rows){ if(!rows.length) return ''; const cols=Object.keys(rows[0]); const out=[cols.join(',')]; for(const r of rows) out.push(cols.map(c=>csvEscape(r[c])).join(',')); return out.join('\n'); }
-  function download(name,content,mime='text/plain;charset=utf-8'){ const blob=new Blob([content],{type:mime}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),800) }
+  const logEl = $('#logs');
+  function log(msg, level='info'){
+    const div = document.createElement('div');
+    div.className = `log-line ${level==='ok'?'ok':level==='warn'?'warn':level==='err'?'err':''}`;
+    const ts = new Date().toISOString().replace('T',' ').replace('Z','');
+    div.textContent = `[${ts}] ${msg}`;
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function clearLogs(){ logEl.innerHTML=''; }
 
-  let abort=false; const state={inputs:[],discover:new Map(),perPlayer:new Map(),rows:[],totals:[]};
-  function reset(){abort=false; state.inputs=[]; state.discover.clear(); state.perPlayer.clear(); state.rows=[]; state.totals=[]; $('#kpi-players').textContent='0'; $('#kpi-found').textContent='0'; $('#kpi-checked').textContent='0'; $('#totals-table tbody').innerHTML=''; $('#rows-table tbody').innerHTML=''; setDownloads(false);}
-  function setDownloads(on){ $('#dl-totals-csv').disabled=!on; $('#dl-totals-json').disabled=!on; $('#dl-rows-csv').disabled=!on; $('#dl-rows-json').disabled=!on; }
+  function stripBOM(s){ if (s && s.charCodeAt(0) === 0xFEFF) return s.slice(1); return s; }
 
-  async function postJSON(url,body){ const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}); const t=await r.text(); let j=null; try{ j=t?JSON.parse(t):null;}catch{} if(!r.ok) throw new Error(`${url} ${r.status}: ${t.slice(0,180)}`); return j; }
-  const asPlayers = (data)=> Array.isArray(data)? data : (data&&Array.isArray(data.players)? data.players : []);
-
-  async function discoverBatch(urls){ try{ return await postJSON('/.netlify/functions/discover',{urls}); }catch(e){ log(`discover batch error: ${e.message}`,'warn'); return null; } }
-  async function checkOne(matchUrl, playerId, playerName){ try{ return await postJSON('/.netlify/functions/check',{matchUrl,playerId,playerName}); }catch(e){ log(`check error ${matchUrl}: ${e.message}`,'warn'); return null; } }
-
-  function didPlay(res){ const s=res&&res.player_stats||{}; const mins=Number(s.minutes_played||0); const any = (Number(s.goals||0)+Number(s.assists||0)+Number(s.yellow_cards||0)+Number(s.red_cards||0)+Number(s.penalty_goals||0))>0; const ratingOk = res&&res.player_rating!=null && !Number.isNaN(Number(res.player_rating)); return mins>0 || any || ratingOk; }
-
-  async function run(){ reset(); clearLogs();
-    const pasted=parseCsv($('#paste').value); const fileRows=await getFileRows(); const combined=[...pasted,...fileRows]; if(!combined.length){ log('No input provided. Paste URLs or load CSV.','err'); return; }
-    for(const row of combined){ const norm=normalizePlayerUrl(row.url); if(!norm){ log(`Skipping invalid URL: ${row.url}`,'warn'); continue; } const pid=Number((norm.match(/players\/(\d+)/)||[])[1]||0)||null; state.inputs.push({name:row.name||'',url:row.url,normUrl:norm,playerId:pid}); }
-    const uniq=new Map(); for(const r of state.inputs){ if(!uniq.has(r.normUrl)) uniq.set(r.normUrl,r); } state.inputs=[...uniq.values()]; if(!state.inputs.length){ log('No valid FotMob player URLs after normalization.','err'); return; }
-    $('#kpi-players').textContent=String(state.inputs.length);
-
-    const BATCH=Math.max(1,Math.min(10,Number($('#batch-size').value||1))); const urlList=state.inputs.map(r=>r.normUrl); const batches=[]; for(let i=0;i<urlList.length;i+=BATCH) batches.push(urlList.slice(i,i+BATCH));
-    for(let i=0;i<batches.length;i++){ if(abort) return; const chunk=batches[i]; log(`Discover batch ${i+1}/${batches.length} (${chunk.length} urls)…`); let data=await discoverBatch(chunk); if(!data){ await sleep(400+jitter()); data=await discoverBatch(chunk);} const arr=asPlayers(data)||[]; for(const p of arr){ if(p&&p.player_url){ const norm=normalizePlayerUrl(p.player_url)||p.player_url; state.discover.set(norm,p); } } const got=new Set(arr.map(p=>normalizePlayerUrl(p.player_url))); const missing=chunk.filter(u=>!got.has(normalizePlayerUrl(u))); if(missing.length){ log(`Re‑queueing ${missing.length} missing…`,'warn'); batches.splice(i+1,0,missing);} }
-
-    for(const inp of state.inputs){ if(abort) return; let d=state.discover.get(inp.normUrl); if(!d){ for(const v of state.discover.values()){ if(v.player_id && Number(v.player_id)===inp.playerId){ d=v; break; } } } if(!d || !Array.isArray(d.match_urls)){ log(`Retrying discover for ${inp.normUrl}`,'warn'); const d2=await discoverBatch([inp.normUrl]); const arr=asPlayers(d2); if(arr[0]) d=arr[0]; }
-      if(!d){ log(`No discover result for ${inp.normUrl}`,'warn'); continue; }
-      const playerId=Number(d.player_id||inp.playerId); const playerName=d.player_name||inp.name||(inp.normUrl.split('/').pop().replace(/-/g,' ')); const playerUrl=d.player_url||inp.normUrl; const seen=new Set(); const matches=(d.match_urls||[]).filter(u=>{ const m=(u||'').match(/match\/(\d+)/); const id=m?m[1]:null; if(!id||seen.has(id)) return false; seen.add(id); return true; }); state.perPlayer.set(playerId,{playerId,playerName,playerUrl,matches,results:[],seenKeys:new Set()}); }
-
-    const totalFound=[...state.perPlayer.values()].reduce((a,p)=>a+p.matches.length,0); $('#kpi-found').textContent=String(totalFound); log(`Discovered ${totalFound} match URLs across ${state.perPlayer.size} players.`,'ok');
-
-    const CONC=Math.max(1,Math.min(5,Number($('#check-concurrency').value||2))); log(`Running checks with concurrency=${CONC}…`);
-    const tasks=[]; for(const p of state.perPlayer.values()) for(const mu of p.matches) tasks.push({p,mu}); let kept=0; $('#kpi-checked').textContent='0';
-    function keyFrom(r){ return r.fixture_key || `${r.league_id||'X'}|${(r.match_datetime_utc||'').slice(0,16)}|${r.home_team_id||r.home_team_name}|${r.away_team_id||r.away_team_name}`; }
-    async function worker(){ while(tasks.length && !abort){ const job=tasks.shift(); if(!job) break; const {p,mu}=job; await sleep(jitter()); const r=await checkOne(mu,p.playerId,p.playerName); if(r&&r.league_id!=null){ const lid=Number(r.league_id); const dt=r.match_datetime_utc?new Date(r.match_datetime_utc):null; if(allowedLeagueIds.has(lid)&&dt&&dt>=SEASON_START&&dt<=SEASON_END){ if(didPlay(r)){ const k=keyFrom(r); if(!p.seenKeys.has(k)){ p.seenKeys.add(k); const s=r.player_stats||{}; const goals=Number(s.goals||0), pg=Number(s.penalty_goals||0), npg=Math.max(0,goals-pg); const row={player:p.playerName,match:r.match_title||'',league:r.league_label||String(lid),kickoff_utc:r.match_datetime_utc||'',rating:r.player_rating??'',potm:r.player_is_pom?1:0,fmp:s.full_match_played?1:0,goals,npg,pg,assists:Number(s.assists||0),yc:Number(s.yellow_cards||0),rc:Number(s.red_cards||0),match_url:mu}; appendRows([row]); kept++; $('#kpi-checked').textContent=String(kept); } } } } } }
-    await Promise.all(Array.from({length:CONC},worker)); if(abort){ log('Aborted.','warn'); return; }
-
-    state.rows=[]; state.totals=[]; for(const p of state.perPlayer.values()){ const rows=p.results; state.rows.push(...rows); const t=rows.reduce((a,r)=>{a.matches++; a.potm+=+r.potm||0; a.fmp+=+r.fmp||0; a.goals+=+r.goals||0; a.npg+=+r.npg||0; a.pg+=+r.pg||0; a.assists+=+r.assists||0; a.yc+=+r.yc||0; a.rc+=+r.rc||0; return a;},{player:p.playerName,url:p.playerUrl,matches:0,potm:0,fmp:0,goals:0,npg:0,pg:0,assists:0,yc:0,rc:0}); state.totals.push(t); }
-    renderTotals(state.totals); if($('#rows-table tbody').children.length===0 && state.rows.length) appendRows(state.rows); setDownloads(true); log('Done. Exports are ready.','ok');
+  function looksLikeUrl(s){
+    try{ const u = new URL(s.trim()); return /fotmob\.com/.test(u.hostname); }catch{return false}
   }
 
-  function renderTotals(rows){ const tb=$('#totals-table tbody'); tb.innerHTML=''; for(const r of rows){ const tr=document.createElement('tr'); tr.innerHTML=`<td>${esc(r.player)}</td><td><a href="${esc(r.url)}" target="_blank">link</a></td><td>${r.matches}</td><td>${r.potm}</td><td>${r.fmp}</td><td>${r.goals}</td><td>${r.npg}</td><td>${r.pg}</td><td>${r.assists}</td><td>${r.yc}</td><td>${r.rc}</td>`; tb.appendChild(tr);} }
-  function appendRows(rows){ const tb=$('#rows-table tbody'); const frag=document.createDocumentFragment(); for(const r of rows){ const tr=document.createElement('tr'); tr.innerHTML=`<td>${esc(r.player)}</td><td>${esc(r.match)}</td><td>${esc(r.league)}</td><td><span class="pill">${esc(r.kickoff_utc)}</span></td><td>${r.rating==null?'':esc(r.rating)}</td><td>${r.potm}</td><td>${r.fmp}</td><td>${r.goals}</td><td>${r.npg}</td><td>${r.pg}</td><td>${r.assists}</td><td>${r.yc}</td><td>${r.rc}</td><td><a href="${esc(r.match_url)}" target="_blank">match</a></td>`; frag.appendChild(tr);} tb.appendChild(frag); const pId=[...state.perPlayer.keys()][0]; }
+  function parseCsv(text){
+    // Robust-ish CSV: handles quotes, commas, newlines, BOM, header optional.
+    text = stripBOM(text || '').replace(/\r\n/g,'\n').trim();
+    if (!text) return [];
 
-  function setButtons(dis){ $('#run').disabled=dis; $('#stop').disabled=!dis; $('#reset').disabled=dis; $('#reset2').disabled=dis; $('#load-players').disabled=dis; $('#load-urls').disabled=dis; $('#clear').disabled=dis; $('#file').disabled=dis; $('#batch-size').disabled=dis; $('#check-concurrency').disabled=dis; }
+    // If it's a plain list of URLs, convert to two-column rows with empty name.
+    const linesRaw = text.split(/\n+/).map(s=>s.trim()).filter(Boolean);
+    const allUrlLines = linesRaw.every(ln => looksLikeUrl(ln) || /,\s*https?:\/\//.test(ln));
+    if (allUrlLines && !/,/.test(linesRaw[0])){
+      return linesRaw.map(u => ({ name: '', url: u.trim() }));
+    }
 
-  async function getFileRows(){ const f=$('#file').files&&$('#file').files[0]; if(!f) return []; const t=await f.text(); return parseCsv(t); }
+    // CSV parser: split into records respecting quotes
+    const rows=[]; let i=0,cur='',inQ=false,rec=[];
+    const pushCell=()=>{ rec.push(cur); cur=''; };
+    const pushRow=()=>{ rows.push(rec); rec=[] };
+    const s=text;
+    while(i<s.length){
+      const ch=s[i++];
+      if (inQ){
+        if (ch==='"'){
+          if (s[i]==='"'){ cur+='"'; i++; } else { inQ=false; }
+        } else cur+=ch;
+      } else {
+        if (ch==='"'){ inQ=true; }
+        else if (ch===','){ pushCell(); }
+        else if (ch==='\n'){ pushCell(); pushRow(); }
+        else cur+=ch;
+      }
+    }
+    pushCell(); if (rec.length) pushRow();
 
-  $('#load-players').addEventListener('click', async()=>{ try{ const r=await fetch('/players.csv'); if(!r.ok) throw new Error(`HTTP ${r.status}`); $('#paste').value=(await r.text()).trim(); log('Loaded /players.csv','ok'); }catch(e){ log(`Failed to load /players.csv: ${e.message}`,'err'); } });
-  $('#load-urls').addEventListener('click', async()=>{ try{ const r=await fetch('/url.csv'); if(!r.ok) throw new Error(`HTTP ${r.status}`); $('#paste').value=(await r.text()).trim(); log('Loaded /url.csv','ok'); }catch(e){ log(`Failed to load /url.csv: ${e.message}`,'err'); } });
-  $('#clear').addEventListener('click',()=>{ $('#paste').value=''; $('#file').value=''; log('Cleared input.'); });
-  $('#reset, #reset2').forEach?$('#reset, #reset2'):null; // for environments without NodeList.forEach
-  document.querySelectorAll('#reset,#reset2').forEach(btn=>btn.addEventListener('click',()=>{ reset(); clearLogs(); $('#paste').value=''; $('#file').value=''; log('Reset complete.','ok'); }));
-  $('#run').addEventListener('click', async()=>{ if($('#run').disabled) return; abort=false; setButtons(true); clearLogs(); log('Starting pipeline…'); try{ await run(); } finally{ setButtons(false); } });
-  $('#stop').addEventListener('click',()=>{ abort=true; log('Stop requested…','warn'); });
+    // Drop empty trailing row
+    while(rows.length && rows[rows.length-1].every(c=>!c.trim())) rows.pop();
 
-  $('#dl-totals-csv').onclick=()=>download('totals.csv',toCSV(state.totals),'text/csv;charset=utf-8');
-  $('#dl-totals-json').onclick=()=>download('totals.json',JSON.stringify(state.totals,null,2),'application/json');
-  $('#dl-rows-csv').onclick=()=>download('rows.csv',toCSV(state.rows),'text/csv;charset=utf-8');
-  $('#dl-rows-json').onclick=()=>download('rows.json',JSON.stringify(state.rows,null,2),'application/json');
+    // Header detection
+    let startIdx=0;
+    if (rows.length){
+      const hdr = rows[0].map(c=>c.toLowerCase().trim());
+      if (hdr.includes('url') || hdr.join(',')==='name,url') startIdx=1;
+    }
+
+    const out=[];
+    for (let r=startIdx;r<rows.length;r++){
+      const cols = rows[r];
+      if (!cols.length) continue;
+      let name='', url='';
+      if (cols.length===1){
+        if (looksLikeUrl(cols[0])) { url = cols[0].trim(); }
+        else { name = cols[0].trim(); }
+      } else {
+        name = (cols[0]||'').trim();
+        url  = (cols[1]||'').trim();
+        // If the first col is actually a URL and second empty, swap
+        if (!url && looksLikeUrl(name)) { url = name; name = ''; }
+      }
+      if (!url) continue;
+      out.push({name,url});
+    }
+    return out;
+  }
+
+  function normalizePlayerUrl(raw){
+    try{
+      const u = new URL(raw.trim());
+      if (!/fotmob\.com$/.test(u.hostname)) return null;
+      // remove locale prefix in pathname (e.g., /en-GB/players/...)
+      let path = u.pathname.replace(/^\/(?:[a-z]{2}-[A-Z]{2}|[a-z]{2})\//,'/');
+      // keep only /players/<id>/<slug>
+      const m = path.match(/\/players\/(\d+)\/([^\/?#]+)/);
+      if (!m) return null;
+      const id = m[1];
+      const slug = decodeURIComponent(m[2]).toLowerCase();
+      return `https://www.fotmob.com/players/${id}/${slug}`;
+    }catch{ return null }
+  }
+
+  function extractPlayerIdFromUrl(u){
+    const m = (u||'').match(/players\/(\d+)/); return m? Number(m[1]) : null;
+  }
+  function extractMatchId(u){ const m=(u||'').match(/match\/(\d+)/); return m? m[1] : null; }
+
+  function csvEscape(v){ if (v==null) return ''; const s=String(v); return /[",\n]/.test(s)? '"'+s.replace(/"/g,'""')+'"' : s; }
+  function toCSV(rows){
+    if (!rows.length) return '';
+    const cols = Object.keys(rows[0]);
+    const lines = [cols.join(',')];
+    for (const r of rows){ lines.push(cols.map(c=>csvEscape(r[c])).join(',')); }
+    return lines.join('\n');
+  }
+  function download(name, content, mime='text/plain;charset=utf-8'){
+    const blob = new Blob([content], {type:mime});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  }
+
+  // ===== State =====
+  let abortFlag=false;
+  const state = {
+    inputs: [], // [{name,url, normUrl, playerId}]
+    discover: new Map(), // normUrl -> { player_url, player_id, player_name, match_urls }
+    perPlayer: new Map(), // player_id -> { playerId, playerName, playerUrl, matches: [matchUrl], results: [] }
+    totals: [],
+    rows: []
+  };
+  function resetState(){
+    abortFlag=false;
+    state.inputs=[]; state.discover.clear(); state.perPlayer.clear(); state.totals=[]; state.rows=[];
+    $('#kpi-players').textContent='0'; $('#kpi-found').textContent='0'; $('#kpi-checked').textContent='0';
+    $('#totals-table tbody').innerHTML='';
+    $('#rows-table tbody').innerHTML='';
+    setDownloadsEnabled(false);
+  }
+  function setDownloadsEnabled(on){
+    $('#dl-totals-csv').disabled=!on; $('#dl-totals-json').disabled=!on; $('#dl-rows-csv').disabled=!on; $('#dl-rows-json').disabled=!on;
+  }
+
+  // ===== Backend calls =====
+  async function postJson(endpoint, payload){
+    const res = await fetch(endpoint, {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(payload)});
+    const text = await res.text();
+    if (!res.ok){ throw new Error(`${endpoint} ${res.status}: ${text.slice(0,200)}`); }
+    let data=null; try{ data = text? JSON.parse(text) : null; } catch{ /* guard bad JSON */ }
+    return data;
+  }
+
+  async function runDiscoverBatch(urls){
+    const payload = { urls };
+    try{ return await postJson('/.netlify/functions/discover', payload); }
+    catch(err){ log(`discover batch error: ${err.message}`,'warn'); return null; }
+  }
+
+  async function runCheck(matchUrl, playerId, playerName){
+    const payload = { matchUrl, playerId, playerName };
+    try{ return await postJson('/.netlify/functions/check', payload); }
+    catch(err){ log(`check error for match ${extractMatchId(matchUrl)||matchUrl}: ${err.message}`,'warn'); return null; }
+  }
+
+  // ===== Pipeline =====
+  async function runPipeline(){
+    resetState(); clearLogs();
+
+    // Gather inputs
+    const pasted = parseCsv($('#paste').value);
+    const fileRows = await getFileRowsIfAny();
+    const combined = [...pasted, ...fileRows];
+    if (!combined.length){ log('No input provided. Paste URLs or load CSV.','err'); return; }
+
+    // Normalize + build inputs
+    for (const row of combined){
+      const norm = normalizePlayerUrl(row.url);
+      if (!norm){ log(`Skipping invalid URL: ${row.url}`,'warn'); continue; }
+      const pid = extractPlayerIdFromUrl(norm);
+      state.inputs.push({name: row.name||'', url: row.url, normUrl: norm, playerId: pid});
+    }
+    // De-duplicate by normalized URL
+    const uniqMap = new Map();
+    for (const r of state.inputs){ if (!uniqMap.has(r.normUrl)) uniqMap.set(r.normUrl, r); }
+    state.inputs = [...uniqMap.values()];
+    if (!state.inputs.length){ log('No valid FotMob player URLs after normalization.','err'); return; }
+    $('#kpi-players').textContent = String(state.inputs.length);
+
+    log(`Running discover for ${state.inputs.length} players…`);
+    const BATCH = Math.max(1, Math.min(10, Number($('#batch-size').value||4)));
+
+    // Batch discover with retry per batch
+    const normUrls = state.inputs.map(r=>r.normUrl);
+    const batches = [];
+    for (let i=0;i<normUrls.length;i+=BATCH) batches.push(normUrls.slice(i,i+BATCH));
+
+    for (let b=0;b<batches.length;b++){
+      if (abortFlag) return;
+      const batch = batches[b];
+      log(`Discover batch ${b+1}/${batches.length} (${batch.length} urls)…`);
+      let data = await runDiscoverBatch(batch);
+      if (!data){
+        log('Batch failed, retrying once…','warn');
+        await sleep(500 + jitter());
+        data = await runDiscoverBatch(batch);
+      }
+      if (!data){ log('Batch failed again; continuing.','err'); continue; }
+
+      // Accept either an array or { ok:true, players:[...] }
+      const playersArr = Array.isArray(data) ? data : (Array.isArray(data?.players) ? data.players : []);
+      for (const item of playersArr){
+        if (!item || !item.player_url){ continue; }
+        const norm = normalizePlayerUrl(item.player_url) || item.player_url;
+        state.discover.set(norm, item);
+      }
+    }
+
+    // Per-player retry for zero-matches edge case
+    for (const inp of state.inputs){
+      if (abortFlag) return;
+      const found = state.discover.get(inp.normUrl);
+      if (!found || !Array.isArray(found.match_urls) || found.match_urls.length===0){
+        log(`Retrying discover for ${inp.normUrl} (individual)…`,'warn');
+        const d = await runDiscoverBatch([inp.normUrl]);
+        const arr = Array.isArray(d) ? d : (Array.isArray(d?.players) ? d.players : []);
+        if (arr[0] && arr[0].player_url){
+          const norm = normalizePlayerUrl(arr[0].player_url) || arr[0].player_url;
+          state.discover.set(norm, arr[0]);
+        }
+      }
+    }
+
+    // Join discover -> inputs (URL, fallback to playerId)
+    const playerEntries = [];
+    for (const inp of state.inputs){
+      let d = state.discover.get(inp.normUrl);
+      if (!d){
+        // fallback by playerId
+        for (const v of state.discover.values()){
+          if (v.player_id && Number(v.player_id)===inp.playerId){ d=v; break; }
+        }
+      }
+      if (!d){ log(`No discover result for ${inp.normUrl}`,'warn'); continue; }
+
+      const playerId = Number(d.player_id || inp.playerId);
+      const playerName = d.player_name || inp.name || (inp.normUrl.split('/').pop().replace(/-/g,' '));
+      const playerUrl = d.player_url || inp.normUrl;
+      // De-dup match URLs by match ID
+      const seen = new Set();
+      const matchUrls = (d.match_urls||[]).filter(u=>{ const id=extractMatchId(u); if(!id||seen.has(id)) return false; seen.add(id); return true; });
+      state.perPlayer.set(playerId, { playerId, playerName, playerUrl, matches: matchUrls, results: [] });
+      playerEntries.push({playerId, playerName, playerUrl, matches: matchUrls.length});
+    }
+
+    const totalFound = [...state.perPlayer.values()].reduce((acc,p)=>acc + p.matches.length, 0);
+    $('#kpi-found').textContent = String(totalFound);
+    log(`Discovered ${totalFound} match URLs across ${state.perPlayer.size} players.`,'ok');
+
+    // Throttled checks
+    const CONC = Math.max(1, Math.min(5, Number($('#check-concurrency').value||2)));
+    log(`Running checks with concurrency=${CONC}…`);
+
+    const tasks = [];
+    for (const p of state.perPlayer.values()){
+      for (const mu of p.matches){ tasks.push({ player: p, matchUrl: mu }); }
+    }
+
+    let completed=0; const totalTasks=tasks.length;
+    $('#kpi-checked').textContent='0';
+
+    async function worker(idx){
+      while(tasks.length && !abortFlag){
+        const job = tasks.shift(); if (!job) break;
+        const { player, matchUrl } = job;
+        await sleep(jitter());
+        const res = await runCheck(matchUrl, player.playerId, player.playerName);
+        if (res && res.league_id!=null){
+          // Defensive: keep only allowed leagues + season window
+          const lid = Number(res.league_id);
+          const dt = res.match_datetime_utc ? new Date(res.match_datetime_utc) : null;
+          if (allowedLeagueIds.has(lid) && dt && dt>=SEASON_START && dt<=SEASON_END){
+            const goals = Number(res?.player_stats?.goals || 0);
+            const pg = Number(res?.player_stats?.penalty_goals || 0);
+            const npg = Math.max(0, goals - pg);
+            const assists = Number(res?.player_stats?.assists || 0);
+            const yc = Number(res?.player_stats?.yellow_cards || 0);
+            const rc = Number(res?.player_stats?.red_cards || 0);
+            const fmp = (res?.player_stats?.full_match_played ? 1 : 0) || (Number(res?.player_stats?.minutes_played||0) >= 90 ? 1 : 0);
+            const potm = res.player_is_pom ? 1 : 0;
+
+            const row = {
+              player: player.playerName,
+              match: res.match_title || '',
+              league: res.league_label || String(lid),
+              kickoff_utc: res.match_datetime_utc || '',
+              rating: res.player_rating ?? '',
+              potm,
+              fmp,
+              goals,
+              npg,
+              pg,
+              assists,
+              yc,
+              rc,
+              match_url: matchUrl
+            };
+            player.results.push(row);
+            // push to global rows later to keep table updates batched? We'll append now for feedback.
+            appendRowsTable([row]);
+          }
+        }
+        completed++; $('#kpi-checked').textContent = String(completed);
+      }
+    }
+
+    const workers = Array.from({length:CONC}, (_,i)=>worker(i));
+    await Promise.all(workers);
+
+    if (abortFlag){ log('Aborted.','warn'); return; }
+
+    // Build totals + rows arrays
+    state.rows = [];
+    state.totals = [];
+    for (const p of state.perPlayer.values()){
+      const rows = p.results;
+      state.rows.push(...rows);
+      const totals = rows.reduce((a,r)=>{
+        a.matches++;
+        a.potm += Number(r.potm||0);
+        a.fmp  += Number(r.fmp||0);
+        a.goals += Number(r.goals||0);
+        a.npg   += Number(r.npg||0);
+        a.pg    += Number(r.pg||0);
+        a.assists += Number(r.assists||0);
+        a.yc += Number(r.yc||0);
+        a.rc += Number(r.rc||0);
+        return a;
+      }, { player: p.playerName, url: p.playerUrl, matches:0,potm:0,fmp:0,goals:0,npg:0,pg:0,assists:0,yc:0,rc:0 });
+      state.totals.push(totals);
+    }
+
+    // Render tables
+    renderTotalsTable(state.totals);
+    // rows were appended during checks; ensure full render (e.g., if no checks ran)
+    if ($('#rows-table tbody').children.length===0 && state.rows.length){ appendRowsTable(state.rows); }
+
+    // Enable downloads
+    setDownloadsEnabled(true);
+
+    log('Done. Exports are ready.','ok');
+  }
+
+  // ===== Rendering =====
+  function renderTotalsTable(rows){
+    const tbody = $('#totals-table tbody'); tbody.innerHTML='';
+    for (const r of rows){
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${esc(r.player)}</td>
+        <td><a href="${esc(r.url)}" target="_blank">link</a></td>
+        <td>${r.matches}</td>
+        <td>${r.potm}</td>
+        <td>${r.fmp}</td>
+        <td>${r.goals}</td>
+        <td>${r.npg}</td>
+        <td>${r.pg}</td>
+        <td>${r.assists}</td>
+        <td>${r.yc}</td>
+        <td>${r.rc}</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function appendRowsTable(rows){
+    if (!rows || !rows.length) return;
+    const tbody = $('#rows-table tbody');
+    const frag = document.createDocumentFragment();
+    for (const r of rows){
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${esc(r.player)}</td>
+        <td>${esc(r.match)}</td>
+        <td>${esc(r.league)}</td>
+        <td><span class="pill">${esc(r.kickoff_utc)}</span></td>
+        <td>${r.rating==null? '': esc(r.rating)}</td>
+        <td>${r.potm}</td>
+        <td>${r.fmp}</td>
+        <td>${r.goals}</td>
+        <td>${r.npg}</td>
+        <td>${r.pg}</td>
+        <td>${r.assists}</td>
+        <td>${r.yc}</td>
+        <td>${r.rc}</td>
+        <td><a href="${esc(r.match_url)}" target="_blank">match</a></td>`;
+      frag.appendChild(tr);
+    }
+    tbody.appendChild(frag);
+  }
+
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  // ===== Downloads =====
+  function makeDownloads(){
+    $('#dl-totals-csv').onclick = ()=> download('totals.csv', toCSV(state.totals), 'text/csv;charset=utf-8');
+    $('#dl-totals-json').onclick = ()=> download('totals.json', JSON.stringify(state.totals, null, 2), 'application/json');
+    $('#dl-rows-csv').onclick   = ()=> download('rows.csv', toCSV(state.rows), 'text/csv;charset=utf-8');
+    $('#dl-rows-json').onclick  = ()=> download('rows.json', JSON.stringify(state.rows, null, 2), 'application/json');
+  }
+
+  function setButtonsDuringRun(disabled){
+    $('#run').disabled=disabled; $('#stop').disabled=!disabled; $('#load-players').disabled=disabled; $('#clear').disabled=disabled; $('#file').disabled=disabled; $('#batch-size').disabled=disabled; $('#check-concurrency').disabled=disabled;
+  }
+
+  // ===== File helpers =====
+  async function getFileRowsIfAny(){
+    const file = $('#file').files && $('#file').files[0];
+    if (!file) return [];
+    const text = await file.text();
+    return parseCsv(text);
+  }
+
+  // ===== Event wiring =====
+  $('#load-players').addEventListener('click', async () => {
+    try{
+      const res = await fetch('/players.csv');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      $('#paste').value = text.trim();
+      log('Loaded /players.csv','ok');
+    }catch(e){ log(`Failed to load /players.csv: ${e.message}`,'err'); }
+  });
+
+  $('#clear').addEventListener('click', ()=>{ $('#paste').value=''; $('#file').value=''; log('Cleared input.'); });
+
+  $('#run').addEventListener('click', async ()=>{
+    if ($('#run').disabled) return;
+    abortFlag=false; setButtonsDuringRun(true); clearLogs(); log('Starting pipeline…');
+    try{ await runPipeline(); }
+    finally{ setButtonsDuringRun(false); }
+  });
+
+  $('#stop').addEventListener('click', ()=>{ abortFlag=true; log('Stop requested…','warn'); });
+
+  makeDownloads();
 })();
 </script>
 </body>
