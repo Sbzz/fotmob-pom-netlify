@@ -16,18 +16,22 @@
     .title{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
     .badge{padding:3px 8px;border:1px solid var(--muted);border-radius:999px;color:var(--sub);font-size:12px}
 
-    /* Layout */
+    /* Top grid */
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
     @media (max-width: 980px){ .grid{grid-template-columns:1fr} }
 
     .card{background:var(--panel);border:1px solid var(--muted);border-radius:16px;padding:16px}
-    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
-    .row > *{flex:1 1 220px}
 
-    textarea{width:100%;min-height:140px;background:#0e141c;color:var(--text);border:1px solid var(--muted);border-radius:10px;padding:10px;resize:vertical}
-    input[type="file"], input[type="number"]{border:1px solid var(--muted);border-radius:10px;padding:8px 10px;background:#0e141c;color:var(--sub)}
+    /* Two-column form grid so the textarea aligns with the right controls */
+    .form-grid{display:grid;grid-template-columns:minmax(320px,1fr) minmax(320px,1fr);gap:14px;align-items:start}
+    @media (max-width: 980px){ .form-grid{grid-template-columns:1fr} }
 
-    button{background:#172231;border:1px solid #263446;color:var(--text);padding:10px 14px;border-radius:10px;cursor:pointer}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+
+    textarea{width:100%;min-height:160px;background:#0e141c;color:var(--text);border:1px solid var(--muted);border-radius:12px;padding:10px;resize:vertical}
+    input[type="file"], input[type="number"]{border:1px solid var(--muted);border-radius:10px;padding:10px;background:#0e141c;color:var(--sub);width:100%}
+
+    button{background:#172231;border:1px solid #263446;color:var(--text);padding:10px 14px;border-radius:10px;cursor:pointer;width:100%}
     button.primary{background:linear-gradient(180deg,#1b6aa5,#124a75);border-color:#0e3c5f}
     button:disabled{opacity:.6;cursor:not-allowed}
 
@@ -66,28 +70,31 @@
     <div class="grid" style="margin-top:18px">
       <div class="card">
         <h3 style="margin-top:0">1) Provide players</h3>
-        <div class="row">
+        <div class="form-grid">
           <div>
             <label class="hint">Paste <b>player URLs</b> (one per line) or <b>CSV</b> (<code class="inline">name,url</code> or just <code class="inline">url</code>)</label>
             <textarea id="paste" placeholder="Lamine Yamal,https://www.fotmob.com/players/1467236/lamine-yamal
 Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textarea>
           </div>
           <div>
-            <label class="hint">…or load a file</label>
+            <label class="hint">Load from file / site</label>
             <input type="file" id="file" accept=".csv,text/csv,text/plain" />
-            <div class="hint" style="margin-top:8px">You can also fetch from site root: <code class="inline">/players.csv</code> or <code class="inline">/url.csv</code></div>
             <div class="row" style="margin-top:10px">
               <button id="load-players" title="Fetch /players.csv">Load /players.csv</button>
               <button id="load-urls" title="Fetch /url.csv">Load /url.csv</button>
-              <button id="clear" title="Clear input">Clear</button>
             </div>
+            <div class="row" style="margin-top:10px">
+              <button id="clear">Clear</button>
+              <button id="reset">Reset</button>
+            </div>
+            <div class="hint" style="margin-top:8px">URLs are normalized (strip locale/query/hash), canonicalized to <code class="inline">/players/&lt;id&gt;/&lt;slug&gt;</code>, de‑duplicated.</div>
           </div>
         </div>
         <details style="margin-top:10px">
           <summary>Input rules (click to expand)</summary>
           <ul class="hint">
-            <li>Accepts header or no header. Either <code class="inline">name,url</code> rows or a plain list with a single <code class="inline">url</code> column.</li>
-            <li>URLs are normalized (strip locale/query/hash) → <code class="inline">https://www.fotmob.com/players/&lt;id&gt;/&lt;slug&gt;</code>. Duplicates dropped.</li>
+            <li>Accepts header or no header. Either <code class="inline">name,url</code> rows or a single <code class="inline">url</code> column / plain list.</li>
+            <li>Place <code class="inline">players.csv</code> or <code class="inline">url.csv</code> in the site root for one‑click loading.</li>
           </ul>
         </details>
       </div>
@@ -95,7 +102,7 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
       <div class="card">
         <h3 style="margin-top:0">2) Run</h3>
         <div class="row">
-          <div>
+          <div style="flex:1 1 260px">
             <label class="hint">Batching / throttling</label>
             <div class="row">
               <div>
@@ -108,12 +115,11 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
               </div>
             </div>
           </div>
-          <div>
+          <div style="flex:1 1 260px">
             <label class="hint">Actions</label>
             <div class="row">
               <button id="run" class="primary">Run Pipeline</button>
               <button id="stop">Stop</button>
-              <button id="reset" title="Reset everything">Reset</button>
             </div>
           </div>
         </div>
@@ -221,6 +227,7 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
   function stripBOM(s){ if (s && s.charCodeAt(0) === 0xFEFF) return s.slice(1); return s; }
   function looksLikeUrl(s){ try{ const u = new URL(s.trim()); return /fotmob\.com/.test(u.hostname); }catch{return false} }
 
+  // CSV: header optional. Accept `name,url` or a single `url` column or a plain list of URLs.
   function parseCsv(text){
     text = stripBOM(text || '').replace(/\r\n/g,'\n').trim();
     if (!text) return [];
@@ -249,6 +256,7 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
       }
     }
     pushCell(); if (rec.length) pushRow();
+
     while(rows.length && rows[rows.length-1].every(c=>!c.trim())) rows.pop();
 
     let startIdx=0;
@@ -280,7 +288,7 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
     }catch{ return null }
   }
 
-  const esc = (s)=> String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function csvEscape(v){ if (v==null) return ''; const s=String(v); return /[",\n]/.test(s)? '"'+s.replace(/"/g,'""')+'"' : s; }
   function toCSV(rows){ if (!rows.length) return ''; const cols = Object.keys(rows[0]); const lines = [cols.join(',')]; for (const r of rows){ lines.push(cols.map(c=>csvEscape(r[c])).join(',')); } return lines.join('\n'); }
   function download(name, content, mime='text/plain;charset=utf-8'){ const blob = new Blob([content], {type:mime}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url), 1000); }
@@ -295,25 +303,25 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
   async function postJson(endpoint, payload){ const res = await fetch(endpoint, {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(payload)}); const text = await res.text(); let data=null; try{ data = text? JSON.parse(text) : null; } catch{} if (!res.ok){ throw new Error(`${endpoint} ${res.status}: ${text.slice(0,180)}`); } return data; }
   function asPlayers(data){ if (!data) return []; if (Array.isArray(data)) return data; if (Array.isArray(data.players)) return data.players; if (data.ok && Array.isArray(data.players)) return data.players; return []; }
   async function runDiscoverBatch(urls){ try{ return await postJson('/.netlify/functions/discover', { urls }); } catch(err){ log(`discover batch error: ${err.message}`,'warn'); return null; } }
-  async function runCheck(matchUrl, playerId, playerName){ try{ return await postJson('/.netlify/functions/check', { matchUrl, playerId, playerName }); } catch(err){ log(`check error for match ${matchUrl}: ${err.message}`,'warn'); return null; } }
+  async function runCheck(matchUrl, playerId, playerName){ try{ return await postJson('/.netlify/functions/check', { matchUrl, playerId, playerName }); } catch(err){ log(`check error for ${matchUrl}: ${err.message}`,'warn'); return null; } }
 
   // ===== Pipeline =====
   async function runPipeline(){
     resetState(); clearLogs();
 
-    // Gather inputs
+    // inputs
     const pasted = parseCsv($('#paste').value);
     const fileRows = await getFileRowsIfAny();
     const combined = [...pasted, ...fileRows];
     if (!combined.length){ log('No input provided. Paste URLs or load CSV.','err'); return; }
 
-    // Normalize + de-dupe
+    // normalize + de-dupe
     for (const row of combined){ const norm = normalizePlayerUrl(row.url); if (!norm){ log(`Skipping invalid URL: ${row.url}`,'warn'); continue; } const pid = Number((norm.match(/players\/(\d+)/)||[])[1]||0)||null; state.inputs.push({ name: row.name||'', url: row.url, normUrl: norm, playerId: pid }); }
     const uniq = new Map(); for (const r of state.inputs){ if (!uniq.has(r.normUrl)) uniq.set(r.normUrl, r); } state.inputs=[...uniq.values()];
     if (!state.inputs.length){ log('No valid FotMob player URLs after normalization.','err'); return; }
     $('#kpi-players').textContent = String(state.inputs.length);
 
-    // Discover (batched)
+    // discover
     const BATCH = Math.max(1, Math.min(10, Number($('#batch-size').value||1)));
     const urls = state.inputs.map(r=>r.normUrl);
     const batches = []; for (let i=0;i<urls.length;i+=BATCH) batches.push(urls.slice(i,i+BATCH));
@@ -327,18 +335,18 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
       const arr = asPlayers(data);
       if (!arr.length){ log('No players returned in this batch.','warn'); }
 
-      // Store results
+      // store
       for (const item of arr){ if (!item || !item.player_url) continue; const norm = normalizePlayerUrl(item.player_url) || item.player_url; state.discover.set(norm, item); }
 
-      // Re-queue any missing from this batch (time budget drops)
+      // re-queue missing (time budget exceeded on server for tail items)
       const got = new Set(arr.map(p=>normalizePlayerUrl(p.player_url))); const missing = batch.filter(u => !got.has(normalizePlayerUrl(u)));
       if (missing.length){ log(`Re‑queueing ${missing.length} missing from batch…`,'warn'); batches.splice(b+1, 0, missing); }
     }
 
-    // Per-player single retry if still empty
+    // single retries for empties
     for (const inp of state.inputs){ if (abortFlag) return; const found = state.discover.get(inp.normUrl); if (!found || !Array.isArray(found.match_urls) || !found.match_urls.length){ log(`Retrying discover for ${inp.normUrl}`,'warn'); const d = await runDiscoverBatch([inp.normUrl]); const arr = asPlayers(d); if (arr[0] && arr[0].player_url){ const norm = normalizePlayerUrl(arr[0].player_url) || arr[0].player_url; state.discover.set(norm, arr[0]); } } }
 
-    // Join & build perPlayer
+    // join → perPlayer
     for (const inp of state.inputs){ let d = state.discover.get(inp.normUrl); if (!d){ for (const v of state.discover.values()){ if (v.player_id && Number(v.player_id)===inp.playerId){ d=v; break; } } }
       if (!d){ log(`No discover result for ${inp.normUrl}`,'warn'); continue; }
       const playerId = Number(d.player_id || inp.playerId);
@@ -346,29 +354,66 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
       const playerUrl = d.player_url || inp.normUrl;
       const seen = new Set();
       const matchUrls = (d.match_urls||[]).filter(u=>{ const mid=(u||'').match(/match\/(\d+)/); const id=mid?mid[1]:null; if(!id||seen.has(id)) return false; seen.add(id); return true; });
-      state.perPlayer.set(playerId, { playerId, playerName, playerUrl, matches: matchUrls, results: [] });
+      state.perPlayer.set(playerId, { playerId, playerName, playerUrl, matches: matchUrls, results: [], seenKeys: new Set() });
     }
 
     const totalFound = [...state.perPlayer.values()].reduce((acc,p)=>acc + p.matches.length, 0);
     $('#kpi-found').textContent = String(totalFound);
     log(`Discovered ${totalFound} match URLs across ${state.perPlayer.size} players.`,'ok');
 
-    // Checks (throttled)
+    // checks (throttled)
     const CONC = Math.max(1, Math.min(5, Number($('#check-concurrency').value||2)));
     log(`Running checks with concurrency=${CONC}…`);
 
     const tasks = [];
     for (const p of state.perPlayer.values()) for (const mu of p.matches) tasks.push({ p, mu });
-    let completed=0; $('#kpi-checked').textContent='0';
 
-    async function worker(){ while(tasks.length && !abortFlag){ const job = tasks.shift(); if (!job) break; const { p, mu } = job; await sleep(jitter()); const res = await runCheck(mu, p.playerId, p.playerName); if (res && res.league_id!=null){ const lid = Number(res.league_id); const dt = res.match_datetime_utc ? new Date(res.match_datetime_utc) : null; if (allowedLeagueIds.has(lid) && dt && dt>=SEASON_START && dt<=SEASON_END){ const goals = Number(res?.player_stats?.goals || 0); const pg = Number(res?.player_stats?.penalty_goals || 0); const npg = Math.max(0, goals - pg); const assists = Number(res?.player_stats?.assists || 0); const yc = Number(res?.player_stats?.yellow_cards || 0); const rc = Number(res?.player_stats?.red_cards || 0); const fmp = res?.player_stats?.full_match_played ? 1 : 0; const potm = res.player_is_pom ? 1 : 0; const row = { player: p.playerName, match: res.match_title || '', league: res.league_label || String(lid), kickoff_utc: res.match_datetime_utc || '', rating: res.player_rating ?? '', potm, fmp, goals, npg, pg, assists, yc, rc, match_url: mu }; p.results.push(row); appendRowsTable([row]); } } completed++; $('#kpi-checked').textContent = String(completed); } }
+    let kept=0; $('#kpi-checked').textContent='0';
+
+    function keyFromRes(res){
+      return res.fixture_key || `${res.league_id||'X'}|${(res.match_datetime_utc||'').slice(0,16)}|${res.home_team_id||res.home_team_name}|${res.away_team_id||res.away_team_name}`;
+    }
+
+    async function worker(){
+      while(tasks.length && !abortFlag){
+        const job = tasks.shift(); if (!job) break; const { p, mu } = job; await sleep(jitter());
+        const res = await runCheck(mu, p.playerId, p.playerName);
+        if (res && res.league_id!=null){
+          const lid = Number(res.league_id);
+          const dt = res.match_datetime_utc ? new Date(res.match_datetime_utc) : null;
+          if (allowedLeagueIds.has(lid) && dt && dt>=SEASON_START && dt<=SEASON_END){
+            const k = keyFromRes(res);
+            if (!p.seenKeys.has(k)){
+              p.seenKeys.add(k);
+              const goals = Number(res?.player_stats?.goals || 0);
+              const pg = Number(res?.player_stats?.penalty_goals || 0);
+              const npg = Math.max(0, goals - pg);
+              const assists = Number(res?.player_stats?.assists || 0);
+              const yc = Number(res?.player_stats?.yellow_cards || 0);
+              const rc = Number(res?.player_stats?.red_cards || 0);
+              const fmp = res?.player_stats?.full_match_played ? 1 : 0;
+              const potm = res.player_is_pom ? 1 : 0;
+              const row = { player: p.playerName, match: res.match_title || '', league: res.league_label || String(lid), kickoff_utc: res.match_datetime_utc || '', rating: res.player_rating ?? '', potm, fmp, goals, npg, pg, assists, yc, rc, match_url: mu };
+              p.results.push(row);
+              appendRowsTable([row]);
+              kept++; $('#kpi-checked').textContent = String(kept);
+            }
+          }
+        }
+      }
+    }
 
     await Promise.all(Array.from({length:CONC}, worker));
     if (abortFlag){ log('Aborted.','warn'); return; }
 
-    // Totals + render
+    // totals + render
     state.rows = []; state.totals = [];
-    for (const p of state.perPlayer.values()){ const rows = p.results; state.rows.push(...rows); const totals = rows.reduce((a,r)=>{ a.matches++; a.potm += Number(r.potm||0); a.fmp  += Number(r.fmp||0); a.goals += Number(r.goals||0); a.npg += Number(r.npg||0); a.pg += Number(r.pg||0); a.assists += Number(r.assists||0); a.yc += Number(r.yc||0); a.rc += Number(r.rc||0); return a; }, { player: p.playerName, url: p.playerUrl, matches:0,potm:0,fmp:0,goals:0,npg:0,pg:0,assists:0,yc:0,rc:0 }); state.totals.push(totals); }
+    for (const p of state.perPlayer.values()){
+      const rows = p.results; state.rows.push(...rows);
+      const totals = rows.reduce((a,r)=>{ a.matches++; a.potm += Number(r.potm||0); a.fmp  += Number(r.fmp||0); a.goals += Number(r.goals||0); a.npg += Number(r.npg||0); a.pg += Number(r.pg||0); a.assists += Number(r.assists||0); a.yc += Number(r.yc||0); a.rc += Number(r.rc||0); return a; }, { player: p.playerName, url: p.playerUrl, matches:0,potm:0,fmp:0,goals:0,npg:0,pg:0,assists:0,yc:0,rc:0 });
+      state.totals.push(totals);
+    }
+
     renderTotalsTable(state.totals);
     if ($('#rows-table tbody').children.length===0 && state.rows.length){ appendRowsTable(state.rows); }
     setDownloadsEnabled(true);
@@ -416,7 +461,7 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
   document.querySelector('#load-players').addEventListener('click', async () => { try{ const res = await fetch('/players.csv'); if (!res.ok) throw new Error(`HTTP ${res.status}`); const text = await res.text(); document.querySelector('#paste').value = text.trim(); log('Loaded /players.csv','ok'); }catch(e){ log(`Failed to load /players.csv: ${e.message}`,'err'); } });
   document.querySelector('#load-urls').addEventListener('click', async () => { try{ const res = await fetch('/url.csv'); if (!res.ok) throw new Error(`HTTP ${res.status}`); const text = await res.text(); document.querySelector('#paste').value = text.trim(); log('Loaded /url.csv','ok'); }catch(e){ log(`Failed to load /url.csv: ${e.message}`,'err'); } });
   document.querySelector('#clear').addEventListener('click', ()=>{ document.querySelector('#paste').value=''; document.querySelector('#file').value=''; log('Cleared input.'); });
-  document.querySelector('#reset').addEventListener('click', ()=>{ resetState(); clearLogs(); log('Reset complete.','ok'); });
+  document.querySelector('#reset').addEventListener('click', ()=>{ resetState(); clearLogs(); document.querySelector('#paste').value=''; document.querySelector('#file').value=''; log('Reset complete.','ok'); });
   document.querySelector('#run').addEventListener('click', async ()=>{ if (document.querySelector('#run').disabled) return; abortFlag=false; setButtonsDuringRun(true); clearLogs(); log('Starting pipeline…'); try{ await runPipeline(); } finally{ setButtonsDuringRun(false); } });
   document.querySelector('#stop').addEventListener('click', ()=>{ abortFlag=true; log('Stop requested…','warn'); });
   makeDownloads();
