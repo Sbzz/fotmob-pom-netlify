@@ -1,6 +1,6 @@
 // netlify/functions/discover.mjs
 // Discover matches for a FotMob player page (HTML + NEXT_DATA).
-// Updated: safeJson helper + retry safeguard.
+// Fixed: safeJson helper + retry safeguard. Clean syntax.
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
@@ -17,7 +17,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function safeJson(res) {
   const txt = await res.text();
   if (!txt) return null;
-  try { return JSON.parse(txt); } catch { return null; }
+  try {
+    return JSON.parse(txt);
+  } catch {
+    return null;
+  }
 }
 
 async function fetchText(url, retry = 1) {
@@ -50,16 +54,22 @@ function parsePlayer(url) {
 }
 
 function extractNextDataString(html) {
-  const m = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>([\\s\\S]*?)<\\/script>/i);
+  const m = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
   return m ? m[1] : null;
 }
-function safeParseJSON(str) { try { return JSON.parse(str); } catch { return null; } }
+function safeParseJSON(str) {
+  try {
+    return JSON.parse(str);
+  } catch {
+    return null;
+  }
+}
 
 function collectMatchIdsFromNextData(nextStrOrObj) {
   const ids = new Set();
   const raw = typeof nextStrOrObj === "string" ? nextStrOrObj : JSON.stringify(nextStrOrObj || {});
-  for (const mm of raw.matchAll(/\"matchId\"\\s*:\\s*(\\d{5,10})/gi)) ids.add(mm[1]);
-  for (const mm of raw.matchAll(/\\/match\\/(\\d{5,10})/gi)) ids.add(mm[1]);
+  for (const mm of raw.matchAll(/"matchId"\s*:\s*(\d{5,10})/gi)) ids.add(mm[1]);
+  for (const mm of raw.matchAll(/\/match\/(\d{5,10})/gi)) ids.add(mm[1]);
 
   const obj = typeof nextStrOrObj === "string" ? safeParseJSON(nextStrOrObj) : (nextStrOrObj || null);
   if (obj && typeof obj === "object") {
@@ -72,7 +82,7 @@ function collectMatchIdsFromNextData(nextStrOrObj) {
       }
       if (node.id && Number.isFinite(Number(node.id))) {
         const sid = String(node.id);
-        if (/^\\d{6,10}$/.test(sid) && (node.homeTeam || node.awayTeam)) ids.add(sid);
+        if (/^\d{6,10}$/.test(sid) && (node.homeTeam || node.awayTeam)) ids.add(sid);
       }
       for (const v of Object.values(node)) {
         if (v && typeof v === "object") q.push(v);
@@ -85,23 +95,23 @@ function collectMatchIdsFromNextData(nextStrOrObj) {
 
 function scrapeMatchLinks(html) {
   const set = new Set();
-  for (const m of html.matchAll(/href=\"(\\/match\\/\\d{5,10}(?:\\/[^"]*)?)\"/gi)) {
+  for (const m of html.matchAll(/href=\"(\/match\/\d{5,10}(?:\/[^\"]*)?)\"/gi)) {
     set.add("https://www.fotmob.com" + m[1]);
   }
-  for (const m of html.matchAll(/href=\"(\\/matches\\/[^\"?#]+)\"/gi)) {
+  for (const m of html.matchAll(/href=\"(\/matches\/[^\"?#]+)\"/gi)) {
     set.add("https://www.fotmob.com" + m[1]);
   }
-  for (const m of html.matchAll(/\"matchId\"\\s*:\\s*(\\d{5,10})/gi)) {
+  for (const m of html.matchAll(/\"matchId\"\s*:\s*(\d{5,10})/gi)) {
     set.add("https://www.fotmob.com/match/" + m[1]);
   }
   return Array.from(set);
 }
 
 function findTeamFromPlayerHtml(html) {
-  const hrefs = Array.from(html.matchAll(/href=\"\\/teams\\/([^\"]+)\"/gi)).map(m => m[1]);
+  const hrefs = Array.from(html.matchAll(/href=\"\/teams\/([^\"]+)\"/gi)).map(m => m[1]);
   const BAD = new Set(["overview","fixtures","matches","squad","stats","statistics","transfers","news","table","season","results"]);
   for (const h of hrefs) {
-    const path = h.split("?")[0].replace(/^\\/+|\\/+$/g, "");
+    const path = h.split("?")[0].replace(/^\/+|\/+$/g, "");
     const segs = path.split("/");
     const id = Number(segs[0]);
     if (!Number.isFinite(id)) continue;
@@ -109,7 +119,7 @@ function findTeamFromPlayerHtml(html) {
     for (let i = segs.length - 1; i >= 1; i--) {
       const s = (segs[i] || "").toLowerCase();
       if (!s || BAD.has(s)) continue;
-      if (/^\\d+$/.test(s)) continue;
+      if (/^\d+$/.test(s)) continue;
       slug = s;
       break;
     }
@@ -128,8 +138,9 @@ async function discoverForPlayer(player_url, cap) {
   }
 
   let playerHtml = "";
-  try { playerHtml = await fetchText(player_url); }
-  catch (e) {
+  try {
+    playerHtml = await fetchText(player_url);
+  } catch (e) {
     debug.errors.push("player_html: " + String(e));
     return { player_url, player_id, player_name, match_urls: [], debug };
   }
