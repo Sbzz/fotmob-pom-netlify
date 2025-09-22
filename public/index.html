@@ -49,9 +49,7 @@
       width:0%;
       transition:width 0.3s ease, background 0.4s ease;
     }
-    .progress-fill.done{
-      background:#16c78a; /* solid green when complete */
-    }
+    .progress-fill.done{ background:#16c78a; }
   </style>
 </head>
 <body>
@@ -106,17 +104,7 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
       <table>
         <thead>
           <tr>
-            <th>Match</th>
-            <th>League</th>
-            <th>POTM?</th>
-            <th>Rating</th>
-            <th>G</th>
-            <th>NPG</th>
-            <th>PG</th>
-            <th>A</th>
-            <th>YC</th>
-            <th>RC</th>
-            <th>FMP</th>
+            <th>Match</th><th>League</th><th>POTM?</th><th>Rating</th><th>G</th><th>NPG</th><th>PG</th><th>A</th><th>YC</th><th>RC</th><th>FMP</th>
           </tr>
         </thead>
         <tbody id="resultsBody">
@@ -127,201 +115,243 @@ https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
   </div>
 
   <script>
-  const qs = (s)=>document.querySelector(s);
+  (function(){
+    const qs = s => document.querySelector(s);
+    const urlsEl = qs('#urls');
+    const btnLoadCSV = qs('#btnLoadCSV');
+    const btnRun = qs('#run');
+    const statusEl = qs('#status');
+    const statusTag = qs('#statusTag');
+    const summaryBox = qs('#summaryBox');
+    const out = qs('#out');
+    const resultsBody = qs('#resultsBody');
+    const dlDetails = qs('#downloadCsvDetails');
+    const progressFill = qs('#progressFill');
 
-  const urlsEl = qs('#urls');
-  const statusEl = qs('#status');
-  const statusTag = qs('#statusTag');
-  const summaryBox = qs('#summaryBox');
-  const out = qs('#out');
-  const resultsBody = qs('#resultsBody');
-  const btnRun = qs('#run');
-  const btnLoadCSV = qs('#btnLoadCSV');
-  const dlDetails = qs('#downloadCsvDetails');
-  const progressFill = qs('#progressFill');
+    let lastDetailsCSV = "";
 
-  let lastDetailsCSV = "";
+    function setTag(t, k){ statusTag.textContent = t; statusTag.className = 'badge ' + (k||''); }
 
-  function setTag(text, klass){
-    statusTag.textContent = text;
-    statusTag.className = "badge " + (klass || "");
-  }
-
-  btnLoadCSV.addEventListener('click', async ()=>{
-    try {
-      let res = await fetch('/url.csv');
-      if (!res.ok) res = await fetch('/public/url.csv');
-      if (!res.ok) throw new Error("url.csv not found");
-      const text = await res.text();
-      const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-      const urls = [];
-      for (const l of lines) {
-        const parts = l.split(',');
-        if (parts.length === 1) urls.push(parts[0]);
-        else urls.push(parts[1]);
-      }
-      urlsEl.value = urls.join('\n');
-      summaryBox.textContent = `Loaded ${urls.length} URLs from url.csv`;
-    } catch(e){
-      summaryBox.textContent = `CSV load error: ${String(e)}`;
-    }
-  });
-
-  function toDetailsCSV(bundles){
-    const rows=[["player_name","player_url","match_url","match_title","league","potm","rating","goals","npg","pg","assists","yc","rc","fmp"]];
-    function resolveName(p){ return p.player_name || ""; }
-    for (const p of bundles){
-      for (const r of (p.raw||[])){
-        if (!r || !r.match_url) continue;
-        const s = r.stats || {};
-        rows.push([
-          resolveName(p),
-          p.player_url,
-          r.match_url,
-          r.match_title||r.resolved_match_id||'',
-          r.league_label??'',
-          r.player_is_pom?"1":"0",
-          (r.player_rating!=null?String(Number(r.player_rating).toFixed(2)):""),
-          s.goals??'',
-          Math.max(0, Number(s.goals||0)-Number(s.penalty_goals||0)),
-          s.penalty_goals??'',
-          s.assists??'',
-          s.yellow_cards??'',
-          s.red_cards??'',
-          s.full_match_played?"1":"0"
-        ]);
-      }
-    }
-    return rows.map(r=>r.join(",")).join("\n");
-  }
-
-  function renderResults(bundles){
-    resultsBody.innerHTML = "";
-    for (const p of bundles){
-      for (const r of (p.raw||[])){
-        if (!r || !r.match_url) continue;
-        const s = r.stats || {};
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${r.match_title || r.resolved_match_id || ''}</td>
-          <td>${r.league_label ?? ''}</td>
-          <td>${r.player_is_pom ? "✓" : ""}</td>
-          <td>${r.player_rating ?? ''}</td>
-          <td>${s.goals ?? ''}</td>
-          <td>${Math.max(0, Number(s.goals || 0) - Number(s.penalty_goals || 0))}</td>
-          <td>${s.penalty_goals ?? ''}</td>
-          <td>${s.assists ?? ''}</td>
-          <td>${s.yellow_cards ?? ''}</td>
-          <td>${s.red_cards ?? ''}</td>
-          <td>${s.full_match_played ? "✓" : ""}</td>
-        `;
-        resultsBody.appendChild(tr);
-      }
-    }
-    if (!resultsBody.children.length){
-      resultsBody.innerHTML = '<tr><td class="muted" colspan="11">No results</td></tr>';
-    }
-  }
-
-  async function runChecksForPlayer(p, concurrency, onProgress) {
-    const urls = [...(p.match_urls || [])];
-    const results = [];
-    let active = 0, i = 0, done = 0;
-
-    return new Promise(resolve => {
-      const pump = () => {
-        while (active < concurrency && i < urls.length) {
-          const matchUrl = urls[i++];
-          active++;
-          fetch("/.netlify/functions/check", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ playerId: p.player_id, playerName: p.player_name, matchUrl })
-          })
-          .then(r => r.json())
-          .then(j => results.push(j))
-          .catch(e => results.push({ match_url: matchUrl, error: String(e) }))
-          .finally(() => {
-            active--; done++;
-            if (onProgress) onProgress(done, urls.length, p);
-            pump();
-          });
+    btnLoadCSV.addEventListener('click', async ()=>{
+      try {
+        let res = await fetch('/url.csv');
+        if (!res.ok) res = await fetch('/public/url.csv');
+        if (!res.ok) throw new Error('url.csv not found');
+        const text = await res.text();
+        // handle BOM & header
+        const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+        const urls = [];
+        for (const l of lines) {
+          // Accept two formats: "name,url" OR just "url"
+          const parts = l.split(',').map(p => p.trim());
+          if (parts.length === 1) {
+            urls.push(parts[0]);
+          } else {
+            // take last column as URL (safe for "name,url" and if name contains comma)
+            urls.push(parts.slice(-1)[0]);
+          }
         }
-        if (active === 0 && i >= urls.length) resolve(results);
-      };
-      pump();
+        urlsEl.value = urls.join('\n');
+        summaryBox.textContent = `Loaded ${urls.length} URLs from url.csv`;
+      } catch (e) {
+        summaryBox.textContent = `CSV load error: ${String(e)}`;
+      }
     });
-  }
 
-  btnRun.onclick = async ()=>{
-    try{
-      btnRun.disabled = true;
-      setTag("Working…","warn");
-      summaryBox.textContent = "Starting…";
-      statusEl.textContent = "Running pipeline…";
-      progressFill.style.width = "0%";
-      progressFill.classList.remove("done");
-
-      const urls = urlsEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-      if (!urls.length){ setTag("Idle"); btnRun.disabled=false; return; }
-
-      const disc = await fetch("/.netlify/functions/discover", {
-        method:"POST",
-        headers:{ "content-type":"application/json" },
-        body: JSON.stringify({ urls, maxMatches:Number(qs('#maxMatches').value||0) })
-      });
-      const discJson = await disc.json();
-
-      const players = discJson.players || [];
-      const concurrency = Math.max(1, Number(qs('#concurrency').value || 3));
-      const bundles = [];
-      const progress = {};
-
-      // global totals
-      const totalMatches = players.reduce((acc,p)=>acc+(p.match_urls||[]).length,0);
-      let globalDone = 0;
-
-      const updateProgress = ()=>{
-        const lines = Object.entries(progress)
-          .map(([name,val])=>`${name} — ${val.done}/${val.total} matches checked`);
-        lines.unshift(`GLOBAL: ${globalDone}/${totalMatches} matches checked`);
-        statusEl.textContent = lines.join("\n");
-
-        const pct = totalMatches>0 ? (globalDone/totalMatches*100).toFixed(1) : 0;
-        progressFill.style.width = pct+"%";
-
-        if (globalDone >= totalMatches && totalMatches > 0) {
-          progressFill.classList.add("done");
+    function toDetailsCSV(bundles){
+      const rows=[["player_name","player_url","match_url","match_title","league","potm","rating","goals","npg","pg","assists","yc","rc","fmp"]];
+      function rname(p){ return p.player_name || ""; }
+      for (const p of bundles){
+        for (const r of (p.raw||[])){
+          if (!r || !r.match_url) continue;
+          const s = r.stats || {};
+          rows.push([
+            rname(p), p.player_url || "", r.match_url || "", r.match_title || r.resolved_match_id || "", r.league_label ?? "",
+            r.player_is_pom ? "1" : "0",
+            (r.player_rating!=null?String(Number(r.player_rating).toFixed(2)):""),
+            s.goals??'', Math.max(0, Number(s.goals||0) - Number(s.penalty_goals||0)),
+            s.penalty_goals??'', s.assists??'', s.yellow_cards??'', s.red_cards??'', s.full_match_played ? "1":"0"
+          ]);
         }
-      };
-
-      for (const p of players){
-        progress[p.player_name] = {done:0,total:(p.match_urls||[]).length};
-        const checked = await runChecksForPlayer(p, concurrency, (done,total,pp)=>{
-          progress[pp.player_name] = {done,total};
-          globalDone++;
-          updateProgress();
-        });
-        bundles.push({ ...p, raw: checked });
       }
-
-      renderResults(bundles);
-      lastDetailsCSV = toDetailsCSV(bundles);
-      dlDetails.disabled = !lastDetailsCSV;
-
-      out.textContent = JSON.stringify({ results: bundles }, null, 2);
-      setTag("Done","ok");
-      summaryBox.textContent = "Completed.";
-      updateProgress();
-    }catch(e){
-      setTag("Error","err");
-      statusEl.textContent = String(e);
-    }finally{
-      btnRun.disabled = false;
+      return rows.map(r=>r.join(",")).join("\n");
     }
-  };
 
-  dlDetails.onclick = ()=>{ if(lastDetailsCSV){ const blob=new Blob([lastDetailsCSV],{type:"text/csv"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="details.csv"; a.click(); } };
+    function renderResults(bundles){
+      resultsBody.innerHTML = "";
+      for (const p of bundles){
+        for (const r of (p.raw||[])){
+          if (!r || !r.match_url) continue;
+          const s = r.stats || {};
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${r.match_title || r.resolved_match_id || ''}</td>
+            <td>${r.league_label ?? ''}</td>
+            <td>${r.player_is_pom ? "✓" : ""}</td>
+            <td>${r.player_rating ?? ''}</td>
+            <td>${s.goals ?? ''}</td>
+            <td>${Math.max(0, Number(s.goals || 0) - Number(s.penalty_goals || 0))}</td>
+            <td>${s.penalty_goals ?? ''}</td>
+            <td>${s.assists ?? ''}</td>
+            <td>${s.yellow_cards ?? ''}</td>
+            <td>${s.red_cards ?? ''}</td>
+            <td>${s.full_match_played ? "✓" : ""}</td>
+          `;
+          resultsBody.appendChild(tr);
+        }
+      }
+      if (!resultsBody.children.length) resultsBody.innerHTML = '<tr><td class="muted" colspan="11">No results</td></tr>';
+    }
+
+    async function runChecksForPlayer(p, concurrency, onProgress, updateGlobal) {
+      const queue = [...(p.match_urls || [])];
+      const results = [];
+      let inFlight = 0, idx = 0, done = 0;
+
+      return new Promise((resolve) => {
+        const pump = () => {
+          while (inFlight < concurrency && idx < queue.length) {
+            const matchUrl = queue[idx++];
+            inFlight++;
+            fetch("/.netlify/functions/check", {
+              method: "POST",
+              headers: { "content-type":"application/json" },
+              body: JSON.stringify({ matchUrl, playerId: p.player_id, playerName: p.player_name })
+            })
+            .then(async res => {
+              // defensive JSON parsing
+              const txt = await res.text();
+              try { return { ok:true, json: txt ? JSON.parse(txt) : null }; }
+              catch(err) { return { ok:false, text: txt, status: res.status, statusText: res.statusText }; }
+            })
+            .then(resp => {
+              if (!resp.ok) {
+                results.push({ match_url: matchUrl, error: `HTTP ${resp.status} ${resp.statusText}`, raw: resp.text });
+              } else {
+                results.push(resp.json || resp.json === null ? resp.json : resp.json);
+              }
+            })
+            .catch(e => results.push({ match_url: matchUrl, error: String(e) }))
+            .finally(() => {
+              inFlight--; done++;
+              if (onProgress) onProgress(done, queue.length, p);
+              if (updateGlobal) updateGlobal();
+              pump();
+            });
+          }
+          if (inFlight === 0 && idx >= queue.length) resolve(results);
+        };
+        pump();
+      });
+    }
+
+    btnRun.onclick = async ()=>{
+      try {
+        btnRun.disabled = true;
+        setTag("Working…","warn");
+        summaryBox.textContent = "Starting…";
+        statusEl.textContent = "Running pipeline…";
+        progressFill.style.width = "0%";
+        progressFill.classList.remove("done");
+
+        const urls = urlsEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+        if (!urls.length) { setTag("Idle"); btnRun.disabled=false; return; }
+
+        // Discover
+        const discRes = await fetch("/.netlify/functions/discover", {
+          method: "POST",
+          headers: { "content-type":"application/json" },
+          body: JSON.stringify({ urls, maxMatches: Number(qs('#maxMatches').value||0) })
+        });
+
+        let discJson = null;
+        try {
+          discJson = await discRes.json();
+        } catch (e) {
+          const txt = await discRes.text();
+          statusEl.textContent = `Discover parse error (${discRes.status}): ${txt.slice(0,200)}`;
+          setTag("Error","err");
+          btnRun.disabled = false;
+          return;
+        }
+
+        if (!discJson || !Array.isArray(discJson.players)) {
+          statusEl.textContent = `Discover returned unexpected payload: ${JSON.stringify(discJson).slice(0,1000)}`;
+          setTag("Error","err");
+          btnRun.disabled = false;
+          return;
+        }
+
+        const players = discJson.players;
+        // quick debug display of discovered counts for each player
+        summaryBox.textContent = players.map(p => `${p.player_name || p.player_url} → ${ (p.match_urls||[]).length } matches`).join("\n");
+
+        // total matches for global progress
+        const totalMatches = players.reduce((a,p)=> a + ((p.match_urls||[]).length), 0);
+        let globalDone = 0;
+        const concurrency = Math.max(1, Number(qs('#concurrency').value || 3));
+        const bundles = [];
+        const progressState = {};
+
+        function updateGlobalProgress() {
+          const pct = totalMatches > 0 ? Math.round((globalDone/totalMatches)*1000)/10 : 0;
+          progressFill.style.width = pct + "%";
+          if (globalDone >= totalMatches && totalMatches > 0) progressFill.classList.add("done");
+        }
+
+        function updateStatusLines() {
+          const lines = [ `GLOBAL: ${globalDone}/${totalMatches} matches checked` ];
+          for (const p of players) {
+            const st = progressState[p.player_name] || { done:0, total: (p.match_urls||[]).length };
+            lines.push(`${p.player_name || p.player_url} — ${st.done}/${st.total}`);
+          }
+          statusEl.textContent = lines.join("\n");
+        }
+
+        for (const p of players) {
+          progressState[p.player_name] = { done: 0, total: (p.match_urls||[]).length };
+          const checked = await runChecksForPlayer(p, concurrency,
+            (done,total,pp) => {
+              progressState[pp.player_name] = { done, total };
+              updateStatusLines();
+            },
+            () => { globalDone++; updateGlobalProgress(); updateStatusLines(); }
+          );
+          // for any non-json returned entries we attempted to put the raw text; normalize shape
+          const normalized = (checked || []).map(item => {
+            if (!item) return { match_url: null, error: "empty response" };
+            if (item.ok === false && item.raw) return { match_url: null, error: "non-json", raw_text: item.raw };
+            // item may be the parsed object already
+            return item;
+          });
+          bundles.push({ ...p, raw: normalized });
+        }
+
+        // render results and CSV
+        renderResults(bundles);
+        lastDetailsCSV = toDetailsCSV(bundles);
+        dlDetails.disabled = !lastDetailsCSV;
+        out.textContent = JSON.stringify({ results: bundles }, null, 2);
+        setTag("Done","ok");
+        summaryBox.textContent = "Completed.";
+      } catch (e) {
+        setTag("Error","err");
+        statusEl.textContent = String(e);
+      } finally {
+        btnRun.disabled = false;
+      }
+    };
+
+    dlDetails.onclick = ()=> {
+      if (!lastDetailsCSV) return;
+      const blob = new Blob([lastDetailsCSV], { type: "text/csv" });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = "details.csv";
+      a.click();
+    };
+
+  })();
   </script>
 </body>
 </html>
