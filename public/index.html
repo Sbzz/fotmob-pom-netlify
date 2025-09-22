@@ -12,47 +12,54 @@
     body{margin:0;background:linear-gradient(180deg,#0b0f14,#0d141c 30%,#0b0f14);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji"}
     a{color:var(--accent);text-decoration:none}
     a:hover{text-decoration:underline}
-    .wrap{max-width:1100px;margin:0 auto;padding:24px}
-    .title{display:flex;gap:12px;align-items:center}
+    .wrap{max-width:1160px;margin:0 auto;padding:24px}
+    .title{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
     .badge{padding:3px 8px;border:1px solid var(--muted);border-radius:999px;color:var(--sub);font-size:12px}
-    .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}
+
+    /* Layout */
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+    @media (max-width: 980px){ .grid{grid-template-columns:1fr} }
+
     .card{background:var(--panel);border:1px solid var(--muted);border-radius:16px;padding:16px}
-    .row{display:flex;gap:12px;flex-wrap:wrap}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
     .row > *{flex:1 1 220px}
+
     textarea{width:100%;min-height:140px;background:#0e141c;color:var(--text);border:1px solid var(--muted);border-radius:10px;padding:10px;resize:vertical}
-    input[type="file"]{border:1px dashed var(--muted);border-radius:10px;padding:10px;background:#0e141c;color:var(--sub)}
+    input[type="file"], input[type="number"]{border:1px solid var(--muted);border-radius:10px;padding:8px 10px;background:#0e141c;color:var(--sub)}
+
     button{background:#172231;border:1px solid #263446;color:var(--text);padding:10px 14px;border-radius:10px;cursor:pointer}
     button.primary{background:linear-gradient(180deg,#1b6aa5,#124a75);border-color:#0e3c5f}
     button:disabled{opacity:.6;cursor:not-allowed}
+
     .kpis{display:flex;gap:12px;flex-wrap:wrap}
     .kpi{background:#0f1722;border:1px solid var(--muted);padding:10px 14px;border-radius:12px;min-width:140px}
     .kpi .num{font-weight:700;font-size:20px}
+
     .logs{max-height:280px;overflow:auto;border:1px solid var(--muted);border-radius:12px;background:#0c121a;padding:10px}
     .log-line{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--sub)}
     .log-line.ok{color:var(--ok)}
     .log-line.warn{color:var(--warn)}
     .log-line.err{color:var(--err)}
+
     table{width:100%;border-collapse:separate;border-spacing:0 8px}
     th,td{text-align:left;padding:8px 10px}
     thead th{color:var(--sub);font-weight:600;border-bottom:1px solid var(--muted)}
     tbody tr{background:#0f1722;border:1px solid var(--muted)}
     tbody td:first-child{border-top-left-radius:8px;border-bottom-left-radius:8px}
     tbody td:last-child{border-top-right-radius:8px;border-bottom-right-radius:8px}
+
     .downloads{display:flex;gap:8px;flex-wrap:wrap}
     .hint{color:var(--sub);font-size:13px}
     .pill{display:inline-block;padding:2px 8px;border:1px solid var(--muted);border-radius:999px;color:var(--sub);font-size:12px}
     details > summary{cursor:pointer;color:var(--sub);margin-bottom:8px}
     .footer{opacity:.8;color:var(--sub);margin-top:24px}
-    .spinner{width:16px;height:16px;border:2px solid #395670;border-top-color:transparent;border-radius:50%;display:inline-block;animation:spin 0.9s linear infinite;vertical-align:middle}
-    @keyframes spin{to{transform:rotate(360deg)}}
-    code.inline{background:#0c121a;border:1px solid var(--muted);border-radius:6px;padding:2px 6px}
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="title">
       <h1 style="margin:0">FotMob 2025–26 Stats Pipeline</h1>
-      <span class="badge">Season window: 2025‑07‑01 → 2026‑06‑30</span>
+      <span class="badge">Season: 2025‑07‑01 → 2026‑06‑30</span>
       <span class="badge">Leagues: PL(47) · LaLiga(87) · Bundesliga(54) · Serie A(55) · Ligue 1(53)</span>
     </div>
 
@@ -61,16 +68,17 @@
         <h3 style="margin-top:0">1) Provide players</h3>
         <div class="row">
           <div>
-            <label class="hint">Paste <b>player URLs</b> (one per line) or <b>CSV</b> (<code class="inline">name,url</code>)</label>
+            <label class="hint">Paste <b>player URLs</b> (one per line) or <b>CSV</b> (<code class="inline">name,url</code> or just <code class="inline">url</code>)</label>
             <textarea id="paste" placeholder="Lamine Yamal,https://www.fotmob.com/players/1467236/lamine-yamal
 Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textarea>
           </div>
           <div>
             <label class="hint">…or load a file</label>
-            <input type="file" id="file" accept=".csv,text/csv" />
-            <div class="hint" style="margin-top:8px">Place <code class="inline">players.csv</code> in the site root to fetch via <a href="/players.csv" target="_blank">/players.csv</a>.</div>
+            <input type="file" id="file" accept=".csv,text/csv,text/plain" />
+            <div class="hint" style="margin-top:8px">You can also fetch from site root: <code class="inline">/players.csv</code> or <code class="inline">/url.csv</code></div>
             <div class="row" style="margin-top:10px">
               <button id="load-players" title="Fetch /players.csv">Load /players.csv</button>
+              <button id="load-urls" title="Fetch /url.csv">Load /url.csv</button>
               <button id="clear" title="Clear input">Clear</button>
             </div>
           </div>
@@ -78,9 +86,8 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
         <details style="margin-top:10px">
           <summary>Input rules (click to expand)</summary>
           <ul class="hint">
-            <li>Accepts header or no header. Either <code class="inline">name,url</code> rows or a plain list of URLs.</li>
-            <li>Normalization fixes locale segments, queries, hashes, and trailing slashes.</li>
-            <li>Canonical form: <code class="inline">https://www.fotmob.com/players/&lt;id&gt;/&lt;slug&gt;</code></li>
+            <li>Accepts header or no header. Either <code class="inline">name,url</code> rows or a plain list with a single <code class="inline">url</code> column.</li>
+            <li>URLs are normalized (strip locale/query/hash) → <code class="inline">https://www.fotmob.com/players/&lt;id&gt;/&lt;slug&gt;</code>. Duplicates dropped.</li>
           </ul>
         </details>
       </div>
@@ -93,11 +100,11 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
             <div class="row">
               <div>
                 <small class="hint">DISCOVER_BATCH_SIZE</small>
-                <input id="batch-size" type="number" min="1" max="10" value="1" style="width:100%;background:#0e141c;color:var(--text);border:1px solid var(--muted);border-radius:8px;padding:6px" />
+                <input id="batch-size" type="number" min="1" max="10" value="1" />
               </div>
               <div>
                 <small class="hint">CHECK_CONCURRENCY</small>
-                <input id="check-concurrency" type="number" min="1" max="5" value="2" style="width:100%;background:#0e141c;color:var(--text);border:1px solid var(--muted);border-radius:8px;padding:6px" />
+                <input id="check-concurrency" type="number" min="1" max="5" value="2" />
               </div>
             </div>
           </div>
@@ -106,6 +113,7 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
             <div class="row">
               <button id="run" class="primary">Run Pipeline</button>
               <button id="stop">Stop</button>
+              <button id="reset" title="Reset everything">Reset</button>
             </div>
           </div>
         </div>
@@ -193,7 +201,6 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
 (() => {
   // ===== Utilities =====
   const $ = sel => document.querySelector(sel);
-  const $$ = sel => document.querySelectorAll(sel);
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const jitter = (min=150,max=450)=> Math.floor(Math.random()*(max-min+1))+min;
   const allowedLeagueIds = new Set([47,87,54,55,53]);
@@ -212,24 +219,18 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
   function clearLogs(){ logEl.innerHTML=''; }
 
   function stripBOM(s){ if (s && s.charCodeAt(0) === 0xFEFF) return s.slice(1); return s; }
-
-  function looksLikeUrl(s){
-    try{ const u = new URL(s.trim()); return /fotmob\.com/.test(u.hostname); }catch{return false}
-  }
+  function looksLikeUrl(s){ try{ const u = new URL(s.trim()); return /fotmob\.com/.test(u.hostname); }catch{return false} }
 
   function parseCsv(text){
-    // Robust-ish CSV: handles quotes, commas, newlines, BOM, header optional.
     text = stripBOM(text || '').replace(/\r\n/g,'\n').trim();
     if (!text) return [];
 
-    // If it's a plain list of URLs, convert to two-column rows with empty name.
     const linesRaw = text.split(/\n+/).map(s=>s.trim()).filter(Boolean);
     const allUrlLines = linesRaw.every(ln => looksLikeUrl(ln) || /,\s*https?:\/\//.test(ln));
     if (allUrlLines && !/,/.test(linesRaw[0])){
       return linesRaw.map(u => ({ name: '', url: u.trim() }));
     }
 
-    // CSV parser: split into records respecting quotes
     const rows=[]; let i=0,cur='',inQ=false,rec=[];
     const pushCell=()=>{ rec.push(cur); cur=''; };
     const pushRow=()=>{ rows.push(rec); rec=[] };
@@ -248,11 +249,8 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
       }
     }
     pushCell(); if (rec.length) pushRow();
-
-    // Drop empty trailing row
     while(rows.length && rows[rows.length-1].every(c=>!c.trim())) rows.pop();
 
-    // Header detection
     let startIdx=0;
     if (rows.length){
       const hdr = rows[0].map(c=>c.toLowerCase().trim());
@@ -261,20 +259,11 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
 
     const out=[];
     for (let r=startIdx;r<rows.length;r++){
-      const cols = rows[r];
-      if (!cols.length) continue;
+      const cols = rows[r]; if (!cols.length) continue;
       let name='', url='';
-      if (cols.length===1){
-        if (looksLikeUrl(cols[0])) { url = cols[0].trim(); }
-        else { name = cols[0].trim(); }
-      } else {
-        name = (cols[0]||'').trim();
-        url  = (cols[1]||'').trim();
-        // If the first col is actually a URL and second empty, swap
-        if (!url && looksLikeUrl(name)) { url = name; name = ''; }
-      }
-      if (!url) continue;
-      out.push({name,url});
+      if (cols.length===1){ if (looksLikeUrl(cols[0])) { url = cols[0].trim(); } else { name = cols[0].trim(); } }
+      else { name=(cols[0]||'').trim(); url=(cols[1]||'').trim(); if (!url && looksLikeUrl(name)) { url=name; name=''; } }
+      if (!url) continue; out.push({name,url});
     }
     return out;
   }
@@ -283,78 +272,30 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
     try{
       const u = new URL(raw.trim());
       if (!/fotmob\.com$/.test(u.hostname)) return null;
-      // remove locale prefix in pathname (e.g., /en-GB/players/...)
       let path = u.pathname.replace(/^\/(?:[a-z]{2}-[A-Z]{2}|[a-z]{2})\//,'/');
-      // keep only /players/<id>/<slug>
       const m = path.match(/\/players\/(\d+)\/([^\/?#]+)/);
       if (!m) return null;
-      const id = m[1];
-      const slug = decodeURIComponent(m[2]).toLowerCase();
+      const id = m[1]; const slug = decodeURIComponent(m[2]).toLowerCase();
       return `https://www.fotmob.com/players/${id}/${slug}`;
     }catch{ return null }
   }
 
-  function extractPlayerIdFromUrl(u){
-    const m = (u||'').match(/players\/(\d+)/); return m? Number(m[1]) : null;
-  }
-  function extractMatchId(u){ const m=(u||'').match(/match\/(\d+)/); return m? m[1] : null; }
-
+  const esc = (s)=> String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   function csvEscape(v){ if (v==null) return ''; const s=String(v); return /[",\n]/.test(s)? '"'+s.replace(/"/g,'""')+'"' : s; }
-  function toCSV(rows){
-    if (!rows.length) return '';
-    const cols = Object.keys(rows[0]);
-    const lines = [cols.join(',')];
-    for (const r of rows){ lines.push(cols.map(c=>csvEscape(r[c])).join(',')); }
-    return lines.join('\n');
-  }
-  function download(name, content, mime='text/plain;charset=utf-8'){
-    const blob = new Blob([content], {type:mime});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url), 1000);
-  }
+  function toCSV(rows){ if (!rows.length) return ''; const cols = Object.keys(rows[0]); const lines = [cols.join(',')]; for (const r of rows){ lines.push(cols.map(c=>csvEscape(r[c])).join(',')); } return lines.join('\n'); }
+  function download(name, content, mime='text/plain;charset=utf-8'){ const blob = new Blob([content], {type:mime}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url), 1000); }
 
   // ===== State =====
   let abortFlag=false;
-  const state = {
-    inputs: [], // [{name,url, normUrl, playerId}]
-    discover: new Map(), // normUrl -> { player_url, player_id, player_name, match_urls }
-    perPlayer: new Map(), // player_id -> { playerId, playerName, playerUrl, matches: [matchUrl], results: [] }
-    totals: [],
-    rows: []
-  };
-  function resetState(){
-    abortFlag=false;
-    state.inputs=[]; state.discover.clear(); state.perPlayer.clear(); state.totals=[]; state.rows=[];
-    $('#kpi-players').textContent='0'; $('#kpi-found').textContent='0'; $('#kpi-checked').textContent='0';
-    $('#totals-table tbody').innerHTML='';
-    $('#rows-table tbody').innerHTML='';
-    setDownloadsEnabled(false);
-  }
-  function setDownloadsEnabled(on){
-    $('#dl-totals-csv').disabled=!on; $('#dl-totals-json').disabled=!on; $('#dl-rows-csv').disabled=!on; $('#dl-rows-json').disabled=!on;
-  }
+  const state = { inputs: [], discover: new Map(), perPlayer: new Map(), totals: [], rows: [] };
+  function resetState(){ abortFlag=false; state.inputs=[]; state.discover.clear(); state.perPlayer.clear(); state.totals=[]; state.rows=[]; $('#kpi-players').textContent='0'; $('#kpi-found').textContent='0'; $('#kpi-checked').textContent='0'; $('#totals-table tbody').innerHTML=''; $('#rows-table tbody').innerHTML=''; setDownloadsEnabled(false); }
+  function setDownloadsEnabled(on){ $('#dl-totals-csv').disabled=!on; $('#dl-totals-json').disabled=!on; $('#dl-rows-csv').disabled=!on; $('#dl-rows-json').disabled=!on; }
 
-  // ===== Backend calls =====
-  async function postJson(endpoint, payload){
-    const res = await fetch(endpoint, {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(payload)});
-    const text = await res.text();
-    if (!res.ok){ throw new Error(`${endpoint} ${res.status}: ${text.slice(0,200)}`); }
-    let data=null; try{ data = text? JSON.parse(text) : null; } catch{ /* guard bad JSON */ }
-    return data;
-  }
-
-  async function runDiscoverBatch(urls){
-    const payload = { urls };
-    try{ return await postJson('/.netlify/functions/discover', payload); }
-    catch(err){ log(`discover batch error: ${err.message}`,'warn'); return null; }
-  }
-
-  async function runCheck(matchUrl, playerId, playerName){
-    const payload = { matchUrl, playerId, playerName };
-    try{ return await postJson('/.netlify/functions/check', payload); }
-    catch(err){ log(`check error for match ${extractMatchId(matchUrl)||matchUrl}: ${err.message}`,'warn'); return null; }
-  }
+  // ===== Backend helpers =====
+  async function postJson(endpoint, payload){ const res = await fetch(endpoint, {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(payload)}); const text = await res.text(); let data=null; try{ data = text? JSON.parse(text) : null; } catch{} if (!res.ok){ throw new Error(`${endpoint} ${res.status}: ${text.slice(0,180)}`); } return data; }
+  function asPlayers(data){ if (!data) return []; if (Array.isArray(data)) return data; if (Array.isArray(data.players)) return data.players; if (data.ok && Array.isArray(data.players)) return data.players; return []; }
+  async function runDiscoverBatch(urls){ try{ return await postJson('/.netlify/functions/discover', { urls }); } catch(err){ log(`discover batch error: ${err.message}`,'warn'); return null; } }
+  async function runCheck(matchUrl, playerId, playerName){ try{ return await postJson('/.netlify/functions/check', { matchUrl, playerId, playerName }); } catch(err){ log(`check error for match ${matchUrl}: ${err.message}`,'warn'); return null; } }
 
   // ===== Pipeline =====
   async function runPipeline(){
@@ -366,188 +307,76 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
     const combined = [...pasted, ...fileRows];
     if (!combined.length){ log('No input provided. Paste URLs or load CSV.','err'); return; }
 
-    // Normalize + build inputs
-    for (const row of combined){
-      const norm = normalizePlayerUrl(row.url);
-      if (!norm){ log(`Skipping invalid URL: ${row.url}`,'warn'); continue; }
-      const pid = extractPlayerIdFromUrl(norm);
-      state.inputs.push({name: row.name||'', url: row.url, normUrl: norm, playerId: pid});
-    }
-    // De-duplicate by normalized URL
-    const uniqMap = new Map();
-    for (const r of state.inputs){ if (!uniqMap.has(r.normUrl)) uniqMap.set(r.normUrl, r); }
-    state.inputs = [...uniqMap.values()];
+    // Normalize + de-dupe
+    for (const row of combined){ const norm = normalizePlayerUrl(row.url); if (!norm){ log(`Skipping invalid URL: ${row.url}`,'warn'); continue; } const pid = Number((norm.match(/players\/(\d+)/)||[])[1]||0)||null; state.inputs.push({ name: row.name||'', url: row.url, normUrl: norm, playerId: pid }); }
+    const uniq = new Map(); for (const r of state.inputs){ if (!uniq.has(r.normUrl)) uniq.set(r.normUrl, r); } state.inputs=[...uniq.values()];
     if (!state.inputs.length){ log('No valid FotMob player URLs after normalization.','err'); return; }
     $('#kpi-players').textContent = String(state.inputs.length);
 
-    log(`Running discover for ${state.inputs.length} players…`);
+    // Discover (batched)
     const BATCH = Math.max(1, Math.min(10, Number($('#batch-size').value||1)));
-
-    // Batch discover with retry per batch
-    const normUrls = state.inputs.map(r=>r.normUrl);
-    const batches = [];
-    for (let i=0;i<normUrls.length;i+=BATCH) batches.push(normUrls.slice(i,i+BATCH));
+    const urls = state.inputs.map(r=>r.normUrl);
+    const batches = []; for (let i=0;i<urls.length;i+=BATCH) batches.push(urls.slice(i,i+BATCH));
 
     for (let b=0;b<batches.length;b++){
       if (abortFlag) return;
       const batch = batches[b];
       log(`Discover batch ${b+1}/${batches.length} (${batch.length} urls)…`);
-      let data = await runDiscoverBatch(batch);
-      if (!data){
-        log('Batch failed, retrying once…','warn');
-        await sleep(500 + jitter());
-        data = await runDiscoverBatch(batch);
-      }
-      if (!data){ log('Batch failed again; continuing.','err'); continue; }
+      let data=null; try{ data = await runDiscoverBatch(batch); } catch(e){ log(`batch exception: ${String(e).slice(0,140)}`,'warn'); }
+      if (!data){ log('Batch failed, retrying once…','warn'); await sleep(500 + jitter()); data = await runDiscoverBatch(batch); }
+      const arr = asPlayers(data);
+      if (!arr.length){ log('No players returned in this batch.','warn'); }
 
-      // Expect array of per-player payloads
-      for (const item of data){
-        if (!item || !item.player_url){ continue; }
-        const norm = normalizePlayerUrl(item.player_url) || item.player_url;
-        state.discover.set(norm, item);
-      }
+      // Store results
+      for (const item of arr){ if (!item || !item.player_url) continue; const norm = normalizePlayerUrl(item.player_url) || item.player_url; state.discover.set(norm, item); }
+
+      // Re-queue any missing from this batch (time budget drops)
+      const got = new Set(arr.map(p=>normalizePlayerUrl(p.player_url))); const missing = batch.filter(u => !got.has(normalizePlayerUrl(u)));
+      if (missing.length){ log(`Re‑queueing ${missing.length} missing from batch…`,'warn'); batches.splice(b+1, 0, missing); }
     }
 
-    // Per-player retry for zero-matches edge case
-    for (const inp of state.inputs){
-      if (abortFlag) return;
-      const found = state.discover.get(inp.normUrl);
-      if (!found || !Array.isArray(found.match_urls) || found.match_urls.length===0){
-        log(`Retrying discover for ${inp.normUrl} (individual)…`,'warn');
-        const d = await runDiscoverBatch([inp.normUrl]);
-        if (Array.isArray(d) && d[0] && d[0].player_url){
-          const norm = normalizePlayerUrl(d[0].player_url) || d[0].player_url;
-          state.discover.set(norm, d[0]);
-        }
-      }
-    }
+    // Per-player single retry if still empty
+    for (const inp of state.inputs){ if (abortFlag) return; const found = state.discover.get(inp.normUrl); if (!found || !Array.isArray(found.match_urls) || !found.match_urls.length){ log(`Retrying discover for ${inp.normUrl}`,'warn'); const d = await runDiscoverBatch([inp.normUrl]); const arr = asPlayers(d); if (arr[0] && arr[0].player_url){ const norm = normalizePlayerUrl(arr[0].player_url) || arr[0].player_url; state.discover.set(norm, arr[0]); } } }
 
-    // Join discover -> inputs (URL, fallback to playerId)
-    const playerEntries = [];
-    for (const inp of state.inputs){
-      let d = state.discover.get(inp.normUrl);
-      if (!d){
-        // fallback by playerId
-        for (const v of state.discover.values()){
-          if (v.player_id && Number(v.player_id)===inp.playerId){ d=v; break; }
-        }
-      }
+    // Join & build perPlayer
+    for (const inp of state.inputs){ let d = state.discover.get(inp.normUrl); if (!d){ for (const v of state.discover.values()){ if (v.player_id && Number(v.player_id)===inp.playerId){ d=v; break; } } }
       if (!d){ log(`No discover result for ${inp.normUrl}`,'warn'); continue; }
-
       const playerId = Number(d.player_id || inp.playerId);
       const playerName = d.player_name || inp.name || (inp.normUrl.split('/').pop().replace(/-/g,' '));
       const playerUrl = d.player_url || inp.normUrl;
-      // De-dup match URLs by match ID
       const seen = new Set();
-      const matchUrls = (d.match_urls||[]).filter(u=>{ const id=extractMatchId(u); if(!id||seen.has(id)) return false; seen.add(id); return true; });
+      const matchUrls = (d.match_urls||[]).filter(u=>{ const mid=(u||'').match(/match\/(\d+)/); const id=mid?mid[1]:null; if(!id||seen.has(id)) return false; seen.add(id); return true; });
       state.perPlayer.set(playerId, { playerId, playerName, playerUrl, matches: matchUrls, results: [] });
-      playerEntries.push({playerId, playerName, playerUrl, matches: matchUrls.length});
     }
 
     const totalFound = [...state.perPlayer.values()].reduce((acc,p)=>acc + p.matches.length, 0);
     $('#kpi-found').textContent = String(totalFound);
     log(`Discovered ${totalFound} match URLs across ${state.perPlayer.size} players.`,'ok');
 
-    // Throttled checks
+    // Checks (throttled)
     const CONC = Math.max(1, Math.min(5, Number($('#check-concurrency').value||2)));
     log(`Running checks with concurrency=${CONC}…`);
 
     const tasks = [];
-    for (const p of state.perPlayer.values()){
-      for (const mu of p.matches){ tasks.push({ player: p, matchUrl: mu }); }
-    }
+    for (const p of state.perPlayer.values()) for (const mu of p.matches) tasks.push({ p, mu });
+    let completed=0; $('#kpi-checked').textContent='0';
 
-    let completed=0; const totalTasks=tasks.length;
-    $('#kpi-checked').textContent='0';
+    async function worker(){ while(tasks.length && !abortFlag){ const job = tasks.shift(); if (!job) break; const { p, mu } = job; await sleep(jitter()); const res = await runCheck(mu, p.playerId, p.playerName); if (res && res.league_id!=null){ const lid = Number(res.league_id); const dt = res.match_datetime_utc ? new Date(res.match_datetime_utc) : null; if (allowedLeagueIds.has(lid) && dt && dt>=SEASON_START && dt<=SEASON_END){ const goals = Number(res?.player_stats?.goals || 0); const pg = Number(res?.player_stats?.penalty_goals || 0); const npg = Math.max(0, goals - pg); const assists = Number(res?.player_stats?.assists || 0); const yc = Number(res?.player_stats?.yellow_cards || 0); const rc = Number(res?.player_stats?.red_cards || 0); const fmp = res?.player_stats?.full_match_played ? 1 : 0; const potm = res.player_is_pom ? 1 : 0; const row = { player: p.playerName, match: res.match_title || '', league: res.league_label || String(lid), kickoff_utc: res.match_datetime_utc || '', rating: res.player_rating ?? '', potm, fmp, goals, npg, pg, assists, yc, rc, match_url: mu }; p.results.push(row); appendRowsTable([row]); } } completed++; $('#kpi-checked').textContent = String(completed); } }
 
-    async function worker(idx){
-      while(tasks.length && !abortFlag){
-        const job = tasks.shift(); if (!job) break;
-        const { player, matchUrl } = job;
-        await sleep(jitter());
-        const res = await runCheck(matchUrl, player.playerId, player.playerName);
-        if (res && res.league_id!=null){
-          // Defensive: keep only allowed leagues + season window
-          const lid = Number(res.league_id);
-          const dt = res.match_datetime_utc ? new Date(res.match_datetime_utc) : null;
-          if (allowedLeagueIds.has(lid) && dt && dt>=SEASON_START && dt<=SEASON_END){
-            const goals = Number(res?.player_stats?.goals || 0);
-            const pg = Number(res?.player_stats?.penalty_goals || 0);
-            const npg = Math.max(0, goals - pg);
-            const assists = Number(res?.player_stats?.assists || 0);
-            const yc = Number(res?.player_stats?.yellow_cards || 0);
-            const rc = Number(res?.player_stats?.red_cards || 0);
-            const fmp = (Number(res?.player_stats?.full_match_played ? 1:0) || (Number(res?.player_stats?.minutesPlayed||0)>=90 ? 1:0)) ? 1 : 0;
-            const potm = res.player_is_pom ? 1 : 0;
-
-            const row = {
-              player: player.playerName,
-              match: res.match_title || '',
-              league: res.league_label || String(lid),
-              kickoff_utc: res.match_datetime_utc || '',
-              rating: res.player_rating ?? '',
-              potm,
-              fmp,
-              goals,
-              npg,
-              pg,
-              assists,
-              yc,
-              rc,
-              match_url: matchUrl
-            };
-            player.results.push(row);
-            // push to global rows later to keep table updates batched? We'll append now for feedback.
-            appendRowsTable([row]);
-          }
-        }
-        completed++; $('#kpi-checked').textContent = String(completed);
-      }
-    }
-
-    const workers = Array.from({length:CONC}, (_,i)=>worker(i));
-    await Promise.all(workers);
-
+    await Promise.all(Array.from({length:CONC}, worker));
     if (abortFlag){ log('Aborted.','warn'); return; }
 
-    // Build totals + rows arrays
-    state.rows = [];
-    state.totals = [];
-    for (const p of state.perPlayer.values()){
-      const rows = p.results;
-      state.rows.push(...rows);
-      const totals = rows.reduce((a,r)=>{
-        a.matches++;
-        a.potm += Number(r.potm||0);
-        a.fmp  += Number(r.fmp||0);
-        a.goals += Number(r.goals||0);
-        a.npg   += Number(r.npg||0);
-        a.pg    += Number(r.pg||0);
-        a.assists += Number(r.assists||0);
-        a.yc += Number(r.yc||0);
-        a.rc += Number(r.rc||0);
-        return a;
-      }, { player: p.playerName, url: p.playerUrl, matches:0,potm:0,fmp:0,goals:0,npg:0,pg:0,assists:0,yc:0,rc:0 });
-      state.totals.push(totals);
-    }
-
-    // Render tables
+    // Totals + render
+    state.rows = []; state.totals = [];
+    for (const p of state.perPlayer.values()){ const rows = p.results; state.rows.push(...rows); const totals = rows.reduce((a,r)=>{ a.matches++; a.potm += Number(r.potm||0); a.fmp  += Number(r.fmp||0); a.goals += Number(r.goals||0); a.npg += Number(r.npg||0); a.pg += Number(r.pg||0); a.assists += Number(r.assists||0); a.yc += Number(r.yc||0); a.rc += Number(r.rc||0); return a; }, { player: p.playerName, url: p.playerUrl, matches:0,potm:0,fmp:0,goals:0,npg:0,pg:0,assists:0,yc:0,rc:0 }); state.totals.push(totals); }
     renderTotalsTable(state.totals);
-    // rows were appended during checks; ensure full render (e.g., if no checks ran)
     if ($('#rows-table tbody').children.length===0 && state.rows.length){ appendRowsTable(state.rows); }
-
-    // Enable downloads
     setDownloadsEnabled(true);
-
     log('Done. Exports are ready.','ok');
   }
 
   // ===== Rendering =====
-  function renderTotalsTable(rows){
-    const tbody = $('#totals-table tbody'); tbody.innerHTML='';
-    for (const r of rows){
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
+  function renderTotalsTable(rows){ const tbody = $('#totals-table tbody'); tbody.innerHTML=''; for (const r of rows){ const tr = document.createElement('tr'); tr.innerHTML = `
         <td>${esc(r.player)}</td>
         <td><a href="${esc(r.url)}" target="_blank">link</a></td>
         <td>${r.matches}</td>
@@ -558,18 +387,9 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
         <td>${r.pg}</td>
         <td>${r.assists}</td>
         <td>${r.yc}</td>
-        <td>${r.rc}</td>`;
-      tbody.appendChild(tr);
-    }
-  }
+        <td>${r.rc}</td>`; tbody.appendChild(tr); } }
 
-  function appendRowsTable(rows){
-    if (!rows || !rows.length) return;
-    const tbody = $('#rows-table tbody');
-    const frag = document.createDocumentFragment();
-    for (const r of rows){
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
+  function appendRowsTable(rows){ if (!rows || !rows.length) return; const tbody = $('#rows-table tbody'); const frag = document.createDocumentFragment(); for (const r of rows){ const tr = document.createElement('tr'); tr.innerHTML = `
         <td>${esc(r.player)}</td>
         <td>${esc(r.match)}</td>
         <td>${esc(r.league)}</td>
@@ -583,56 +403,22 @@ Vinicius Junior,https://www.fotmob.com/players/846033/vinicius-junior"></textare
         <td>${r.assists}</td>
         <td>${r.yc}</td>
         <td>${r.rc}</td>
-        <td><a href="${esc(r.match_url)}" target="_blank">match</a></td>`;
-      frag.appendChild(tr);
-    }
-    tbody.appendChild(frag);
-  }
-
-  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+        <td><a href="${esc(r.match_url)}" target="_blank">match</a></td>`; frag.appendChild(tr); } tbody.appendChild(frag); }
 
   // ===== Downloads =====
-  function makeDownloads(){
-    $('#dl-totals-csv').onclick = ()=> download('totals.csv', toCSV(state.totals), 'text/csv;charset=utf-8');
-    $('#dl-totals-json').onclick = ()=> download('totals.json', JSON.stringify(state.totals, null, 2), 'application/json');
-    $('#dl-rows-csv').onclick   = ()=> download('rows.csv', toCSV(state.rows), 'text/csv;charset=utf-8');
-    $('#dl-rows-json').onclick  = ()=> download('rows.json', JSON.stringify(state.rows, null, 2), 'application/json');
-  }
-
-  function setButtonsDuringRun(disabled){
-    $('#run').disabled=disabled; $('#stop').disabled=!disabled; $('#load-players').disabled=disabled; $('#clear').disabled=disabled; $('#file').disabled=disabled; $('#batch-size').disabled=disabled; $('#check-concurrency').disabled=disabled;
-  }
+  function makeDownloads(){ $('#dl-totals-csv').onclick = ()=> download('totals.csv', toCSV(state.totals), 'text/csv;charset=utf-8'); $('#dl-totals-json').onclick = ()=> download('totals.json', JSON.stringify(state.totals, null, 2), 'application/json'); $('#dl-rows-csv').onclick   = ()=> download('rows.csv', toCSV(state.rows), 'text/csv;charset=utf-8'); $('#dl-rows-json').onclick  = ()=> download('rows.json', JSON.stringify(state.rows, null, 2), 'application/json'); }
+  function setButtonsDuringRun(disabled){ $('#run').disabled=disabled; $('#stop').disabled=!disabled; $('#reset').disabled=disabled; $('#load-players').disabled=disabled; $('#load-urls').disabled=disabled; $('#clear').disabled=disabled; $('#file').disabled=disabled; $('#batch-size').disabled=disabled; $('#check-concurrency').disabled=disabled; }
 
   // ===== File helpers =====
-  async function getFileRowsIfAny(){
-    const file = $('#file').files && $('#file').files[0];
-    if (!file) return [];
-    const text = await file.text();
-    return parseCsv(text);
-  }
+  async function getFileRowsIfAny(){ const file = document.querySelector('#file').files && document.querySelector('#file').files[0]; if (!file) return []; const text = await file.text(); return parseCsv(text); }
 
   // ===== Event wiring =====
-  $('#load-players').addEventListener('click', async () => {
-    try{
-      const res = await fetch('/players.csv');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const text = await res.text();
-      $('#paste').value = text.trim();
-      log('Loaded /players.csv','ok');
-    }catch(e){ log(`Failed to load /players.csv: ${e.message}`,'err'); }
-  });
-
-  $('#clear').addEventListener('click', ()=>{ $('#paste').value=''; $('#file').value=''; log('Cleared input.'); });
-
-  $('#run').addEventListener('click', async ()=>{
-    if ($('#run').disabled) return;
-    abortFlag=false; setButtonsDuringRun(true); clearLogs(); log('Starting pipeline…');
-    try{ await runPipeline(); }
-    finally{ setButtonsDuringRun(false); }
-  });
-
-  $('#stop').addEventListener('click', ()=>{ abortFlag=true; log('Stop requested…','warn'); });
-
+  document.querySelector('#load-players').addEventListener('click', async () => { try{ const res = await fetch('/players.csv'); if (!res.ok) throw new Error(`HTTP ${res.status}`); const text = await res.text(); document.querySelector('#paste').value = text.trim(); log('Loaded /players.csv','ok'); }catch(e){ log(`Failed to load /players.csv: ${e.message}`,'err'); } });
+  document.querySelector('#load-urls').addEventListener('click', async () => { try{ const res = await fetch('/url.csv'); if (!res.ok) throw new Error(`HTTP ${res.status}`); const text = await res.text(); document.querySelector('#paste').value = text.trim(); log('Loaded /url.csv','ok'); }catch(e){ log(`Failed to load /url.csv: ${e.message}`,'err'); } });
+  document.querySelector('#clear').addEventListener('click', ()=>{ document.querySelector('#paste').value=''; document.querySelector('#file').value=''; log('Cleared input.'); });
+  document.querySelector('#reset').addEventListener('click', ()=>{ resetState(); clearLogs(); log('Reset complete.','ok'); });
+  document.querySelector('#run').addEventListener('click', async ()=>{ if (document.querySelector('#run').disabled) return; abortFlag=false; setButtonsDuringRun(true); clearLogs(); log('Starting pipeline…'); try{ await runPipeline(); } finally{ setButtonsDuringRun(false); } });
+  document.querySelector('#stop').addEventListener('click', ()=>{ abortFlag=true; log('Stop requested…','warn'); });
   makeDownloads();
 })();
 </script>
