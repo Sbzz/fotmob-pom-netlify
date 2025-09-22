@@ -1,27 +1,29 @@
+// =============================
 // netlify/functions/check.mjs
+// =============================
 // Fixes PG/NPG and RC via event dedup + strict penalty detection + sane clamps.
-// Leaves discovery, POTM, FMP, assists, league/season filters, fixture key, and UI contract unchanged.
+// Adds minutes_played + player_did_play flag. Leaves discovery, POTM, FMP, league/season filters, fixture key, and UI contract unchanged.
 
-const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
-const SEASON_START = new Date(Date.UTC(2025, 6, 1));                // 2025-07-01
-const SEASON_END   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59));   // 2026-06-30
-const NOW          = new Date();
+const TOP5_LEAGUE_IDS_C = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
+const SEASON_START_C = new Date(Date.UTC(2025, 6, 1));                // 2025-07-01
+const SEASON_END_C   = new Date(Date.UTC(2026, 5, 30, 23, 59, 59));   // 2026-06-30
+const NOW_C          = new Date();
 
 const nz = (v, d) => (v === null || v === undefined ? d : v);
-const asNum = (v) => Number.isFinite(Number(v)) ? Number(v) : null;
+const asNumC = (v) => Number.isFinite(Number(v)) ? Number(v) : null;
 const clampInt = (v) => Number.isFinite(v) ? Math.max(0, Math.trunc(v)) : 0;
 
-const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36";
-const HDRS = {
+const UA_C = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36";
+const HDRS_C = {
   accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-  "user-agent": UA,
+  "user-agent": UA_C,
   referer: "https://www.fotmob.com/",
   "accept-language": "en-GB,en;q=0.9"
 };
 
-const resp = (code, obj) => ({ statusCode: code, headers: { "content-type": "application/json" }, body: JSON.stringify(obj) });
+const respC = (code, obj) => ({ statusCode: code, headers: { "content-type": "application/json" }, body: JSON.stringify(obj) });
 
-function toISO(v){
+function toISOC(v){
   if (v === null || v === undefined) return null;
   const n = Number(v);
   if (Number.isFinite(n)) {
@@ -31,26 +33,26 @@ function toISO(v){
   const d = new Date(v);
   return isNaN(d) ? null : d.toISOString();
 }
-function inSeason(iso){
+function inSeasonC(iso){
   if(!iso) return false;
   const d = new Date(iso);
-  return d >= SEASON_START && d <= SEASON_END && d <= NOW;
+  return d >= SEASON_START_C && d <= SEASON_END_C && d <= NOW_C;
 }
 
-async function fetchText(url){
-  const r = await fetch(url, { headers: HDRS, redirect: "follow" });
+async function fetchTextC(url){
+  const r = await fetch(url, { headers: HDRS_C, redirect: "follow" });
   const html = await r.text();
   if(!r.ok) throw new Error(`HTTP ${r.status} ${r.statusText}`);
   if(!html) throw new Error("Empty HTML");
   return { html, finalUrl: r.url || url };
 }
-function nextDataStr(html){
+function nextDataStrC(html){
   const m = html.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
   return m ? m[1] : null;
 }
-function safeJSON(s){ try{ return JSON.parse(s); }catch{ return null; } }
+function safeJSONC(s){ try{ return JSON.parse(s); }catch{ return null; } }
 
-function* walk(root){
+function* walkC(root){
   const stack=[root], seen=new Set();
   while(stack.length){
     const n=stack.pop();
@@ -81,54 +83,54 @@ function extractGeneral(root){
   const setTeams = (g)=>{
     const home = g?.homeTeam || g?.home || null;
     const away = g?.awayTeam || g?.away || null;
-    if(home){ hId = (hId!==null && hId!==undefined) ? hId : asNum(home.id); hName = hName || (home.name || home.teamName || home.shortName || null); }
-    if(away){ aId = (aId!==null && aId!==undefined) ? aId : asNum(away.id); aName = aName || (away.name || away.teamName || away.shortName || null); }
+    if(home){ hId = (hId!==null && hId!==undefined) ? hId : asNumC(home.id); hName = hName || (home.name || home.teamName || home.shortName || null); }
+    if(away){ aId = (aId!==null && aId!==undefined) ? aId : asNumC(away.id); aName = aName || (away.name || away.teamName || away.shortName || null); }
   };
 
-  for(const node of walk(root)){
+  for(const node of walkC(root)){
     const g = node?.general || node?.overview?.general || node?.match?.general || null;
     if(!g) continue;
-    leagueId   = (leagueId!==null && leagueId!==undefined) ? leagueId : asNum(g.leagueId || g.tournamentId || g.competitionId);
+    leagueId   = (leagueId!==null && leagueId!==undefined) ? leagueId : asNumC(g.leagueId || g.tournamentId || g.competitionId);
     leagueName = leagueName || (g.leagueName || g.tournamentName || g.competitionName || g?.league?.name || g?.tournament?.name || g?.competition?.name);
-    iso        = iso || toISO(g.matchTimeUTC || g.startTimeUTC || g?.kickoff?.utc || g.dateUTC);
+    iso        = iso || toISOC(g.matchTimeUTC || g.startTimeUTC || g?.kickoff?.utc || g.dateUTC);
     title      = title || (g.pageTitle || g.matchName || g.title);
-    mid        = (mid!==null && mid!==undefined) ? mid : asNum(g.matchId || g.id);
+    mid        = (mid!==null && mid!==undefined) ? mid : asNumC(g.matchId || g.id);
     setTeams(g);
     if(leagueId && iso && (hId||hName) && (aId||aName)) break;
   }
   if(!title){
-    for(const node of walk(root)){ if(node?.seo?.title){ title=node.seo.title; break; } }
+    for(const node of walkC(root)){ if(node?.seo?.title){ title=node.seo.title; break; } }
   }
   if(!mid){
-    for(const node of walk(root)){ if(asNum(node?.matchId)){ mid=asNum(node.matchId); break; } }
+    for(const node of walkC(root)){ if(asNumC(node?.matchId)){ mid=asNumC(node.matchId); break; } }
   }
   return { leagueId, leagueName, iso, title, matchId: mid, hId, aId, hName, aName };
 }
 
 function extractPOTM(root){
-  for(const node of walk(root)){
+  for(const node of walkC(root)){
     const potm = node?.playerOfTheMatch || node?.potm || node?.manOfTheMatch;
     if(potm && (potm.id || potm.playerId || potm.name)){
-      const id = asNum(potm.id || potm.playerId);
+      const id = asNumC(potm.id || potm.playerId);
       const nm = (potm.name && (potm.name.fullName || potm.name)) || (potm.firstName && potm.lastName ? `${potm.firstName} ${potm.lastName}` : null);
-      const ratingNum = asNum((potm.rating && potm.rating.num) || potm.rating);
+      const ratingNum = asNumC((potm.rating && potm.rating.num) || potm.rating);
       return { id, name: nm, rating: ratingNum };
     }
   }
   // fallback: best finished rating
   let best=null;
-  for(const node of walk(root)){
+  for(const node of walkC(root)){
     if(!node?.rating) continue;
     const isTop = node?.rating?.isTop?.isTopRating;
     const finished = node?.rating?.isTop?.isMatchFinished;
     if(!isTop || !finished) continue;
     const cand = {
-      id: asNum(node.id || node.playerId),
+      id: asNumC(node.id || node.playerId),
       name: (node?.name && (node.name.fullName || node.name)) || null,
-      rating: asNum(node?.rating?.num)
+      rating: asNumC(node?.rating?.num)
     };
     if(cand.id || cand.name){
-      if(!best || (asNum(cand.rating)||0) > (asNum(best.rating)||0)) best = cand;
+      if(!best || (asNumC(cand.rating)||0) > (asNumC(best.rating)||0)) best = cand;
     }
   }
   return best;
@@ -137,8 +139,8 @@ function extractPOTM(root){
 function findPlayerNode(root, playerId, playerName){
   const targetName = normName(playerName||'');
   let exactById=null, bestByName=null, withMinutes=null;
-  for(const node of walk(root)){
-    const id = asNum(node?.id || node?.playerId);
+  for(const node of walkC(root)){
+    const id = asNumC(node?.id || node?.playerId);
     const full = (node?.name && (node.name.fullName || node.name)) || null;
 
     if(node?.minutesPlayed!=null && (id===playerId || (full && normName(full)===targetName))){
@@ -213,7 +215,7 @@ function extractFromEvents(root, playerId, playerName){
            null;
   };
   const playerIdOf = (e)=>{
-    return asNum(
+    return asNumC(
       e?.player?.id || e?.playerId || e?.actor?.id || e?.participant?.id ||
       e?.subject?.id || e?.player1Id || e?.playerId1
     );
@@ -241,7 +243,7 @@ function extractFromEvents(root, playerId, playerName){
     if(!playerId && nm && normName(nm)===tName) return true;
     if(Array.isArray(e?.players)){
       for(const p of e.players){
-        const id = asNum(p?.id);
+        const id = asNumC(p?.id);
         const fn = p?.name?.fullName || p?.name;
         if(playerId && id===playerId) return true;
         if(!playerId && fn && normName(fn)===tName) return true;
@@ -292,9 +294,9 @@ function extractFromEvents(root, playerId, playerName){
 
   const eventId = (e)=>{
     return String(
-      nz(asNum(e?.id), '') ||
-      nz(asNum(e?.eventId), '') ||
-      nz(asNum(e?.incidentId), '') ||
+      nz(asNumC(e?.id), '') ||
+      nz(asNumC(e?.eventId), '') ||
+      nz(asNumC(e?.incidentId), '') ||
       ''
     );
   };
@@ -319,7 +321,7 @@ function extractFromEvents(root, playerId, playerName){
 
   // flatten & dedup across all event-like arrays
   const arrays = new Set();
-  for(const node of walk(root)){
+  for(const node of walkC(root)){
     for (const [k,valArr] of Object.entries(node||{})){
       if(Array.isArray(valArr) && valArr.length){
         const e0 = valArr[0];
@@ -354,24 +356,18 @@ function extractFromEvents(root, playerId, playerName){
         }
       }
 
-      // ASSISTS
-      // We keep your existing assist total policy (prefer stats unless missing),
-      // but counting here doesn't hurt since we use it as fallback only.
+      // ASSISTS (fallback only)
       const hasGoalShape = isGoalEvent(e) && !isOwnGoal(e);
       if(hasGoalShape){
-        // detect assists by presence of assisting player fields
         const aIds = [];
         const aNames = [];
-        if (e?.assist) { aIds.push(asNum(e.assist.id)); aNames.push(e.assist?.name?.fullName || e.assistName); }
-        if (e?.assistId!=null) aIds.push(asNum(e.assistId));
-        if (e?.assisterId!=null) aIds.push(asNum(e.assisterId));
-        if (e?.assistPlayerId!=null) aIds.push(asNum(e.assistPlayerId));
-        if (e?.secondaryPlayerId!=null) aIds.push(asNum(e.secondaryPlayerId));
-        if (Array.isArray(e?.assists)) for(const a of e.assists){ aIds.push(asNum(a?.id)); aNames.push(a?.name?.fullName||a?.name); }
-        if (Array.isArray(e?.assistPlayers)) for(const a of e.assistPlayers){ aIds.push(asNum(a?.id)); aNames.push(a?.name?.fullName||a?.name); }
-        // if the *scorer* is our player, we don't increment assists here
-        // (Assist belongs to another player). We only increment if our
-        // player appears in the assist fields.
+        if (e?.assist) { aIds.push(asNumC(e.assist.id)); aNames.push(e.assist?.name?.fullName || e.assistName); }
+        if (e?.assistId!=null) aIds.push(asNumC(e.assistId));
+        if (e?.assisterId!=null) aIds.push(asNumC(e.assisterId));
+        if (e?.assistPlayerId!=null) aIds.push(asNumC(e.assistPlayerId));
+        if (e?.secondaryPlayerId!=null) aIds.push(asNumC(e.secondaryPlayerId));
+        if (Array.isArray(e?.assists)) for(const a of e.assists){ aIds.push(asNumC(a?.id)); aNames.push(a?.name?.fullName||a?.name); }
+        if (Array.isArray(e?.assistPlayers)) for(const a of e.assistPlayers){ aIds.push(asNumC(a?.id)); aNames.push(a?.name?.fullName||a?.name); }
         const scorerIsMe = matchByPlayer(e);
         if(!scorerIsMe){
           const meById = (playerId && aIds.some(id => id===playerId));
@@ -402,7 +398,6 @@ function extractFromEvents(root, playerId, playerName){
     }
   }
 
-  // If a description explicitly says "second yellow", ensure at least one yellow is counted
   if(sawSecondYellowText && acc.yellow_cards===0) acc.yellow_cards = 1;
 
   return acc;
@@ -414,7 +409,7 @@ function extractCardsFromFacts(root, playerId, playerName){
   const tName = normName(playerName||'');
 
   const isMe = (obj)=>{
-    const id = asNum(obj?.playerId || obj?.id || obj?.player?.id || obj?.personId);
+    const id = asNumC(obj?.playerId || obj?.id || obj?.player?.id || obj?.personId);
     const nm = obj?.player?.name?.fullName || obj?.playerName || obj?.name || null;
     if(playerId && id === playerId) return true;
     if(!playerId && nm && normName(nm)===tName) return true;
@@ -430,7 +425,7 @@ function extractCardsFromFacts(root, playerId, playerName){
     return null;
   };
 
-  for(const node of walk(root)){
+  for(const node of walkC(root)){
     const arrays = [];
     if(Array.isArray(node?.cards)) arrays.push(node.cards);
     if(Array.isArray(node?.bookings)) arrays.push(node.bookings);
@@ -455,8 +450,8 @@ function extractFromShotmap(root, playerId, playerName){
   const acc = { goals:0, penalty_goals:0 };
   const tName = normName(playerName||'');
 
-  for(const node of walk(root)){
-    const id   = asNum(node?.id || node?.playerId);
+  for(const node of walkC(root)){
+    const id   = asNumC(node?.id || node?.playerId);
     const name = node?.name?.fullName || node?.name || null;
     if(!Array.isArray(node?.shotmap)) continue;
 
@@ -480,7 +475,7 @@ function extractFromShotmap(root, playerId, playerName){
 
 // ---------- Build per match ----------
 function buildResult({ matchUrl, general, potm, playerNode, playerId, playerName, next }){
-  const league_id   = asNum(general.leagueId);
+  const league_id   = asNumC(general.leagueId);
   const league_name = general.leagueName || null;
   const iso         = general.iso || null;
 
@@ -525,7 +520,7 @@ function buildResult({ matchUrl, general, potm, playerNode, playerId, playerName
   const fmp = clampInt(mins) >= 90;
 
   // POTM flag
-  const pid = asNum(playerId);
+  const pid = asNumC(playerId);
   const player_is_pom =
     !!potm && ((pid && potm.id && pid === potm.id) || (!pid && potm.name && normName(potm.name) === normName(playerName||'')));
 
@@ -535,6 +530,11 @@ function buildResult({ matchUrl, general, potm, playerNode, playerId, playerName
     general.hName, general.aName
   );
 
+  // Appearance flag (useful for frontend DNP filter)
+  const appeared = (clampInt(mins) > 0) ||
+                   (Number.isFinite(rating)) ||
+                   ((goals+assists+yc+rc+pg) > 0);
+
   return {
     match_url: matchUrl,
     resolved_match_id: general.matchId ? String(general.matchId) : ((matchUrl.match(/\/match\/(\d+)/) || [])[1] || null),
@@ -542,8 +542,8 @@ function buildResult({ matchUrl, general, potm, playerNode, playerId, playerName
     league_id,
     league_label: league_name,
     match_datetime_utc: iso,
-    league_allowed: (league_id !== null && league_id !== undefined) && TOP5_LEAGUE_IDS.has(league_id),
-    within_season_2025_26: !!iso && inSeason(iso),
+    league_allowed: (league_id !== null && league_id !== undefined) && TOP5_LEAGUE_IDS_C.has(league_id),
+    within_season_2025_26: !!iso && inSeasonC(iso),
 
     player_is_pom,
     player_rating: (rating!=null ? Number(rating) : null),
@@ -562,8 +562,10 @@ function buildResult({ matchUrl, general, potm, playerNode, playerId, playerName
       assists: clampInt(assists),
       yellow_cards: clampInt(yc),
       red_cards: clampInt(rc),
-      full_match_played: !!fmp
+      full_match_played: !!fmp,
+      minutes_played: clampInt(mins)
     },
+    player_did_play: appeared,
     echo_player_name: (playerNode && playerNode.name && (playerNode.name.fullName || playerNode.name)) || playerName || null,
     source: "fotmob_html+events_dedup"
   };
@@ -573,30 +575,30 @@ function buildResult({ matchUrl, general, potm, playerNode, playerId, playerName
 export async function handler(event){
   try{
     if(event.httpMethod!=="POST"){
-      return resp(400, { error:"POST required" });
+      return respC(400, { error:"POST required" });
     }
     let body={};
-    try{ body = JSON.parse(event.body||"{}"); }catch{ return resp(400,{ error:"Bad JSON" }); }
+    try{ body = JSON.parse(event.body||"{}"); }catch{ return respC(400,{ error:"Bad JSON" }); }
 
     const matchUrl = String(body.matchUrl||"").trim();
-    const playerId = asNum(body.playerId);
+    const playerId = asNumC(body.playerId);
     const playerName = String(body.playerName||"").trim();
-    if(!/\/match\/\d+/.test(matchUrl)) return resp(200,{ error:"Provide matchUrl like https://www.fotmob.com/match/123456" });
+    if(!/\/match\/(\d+)/.test(matchUrl)) return respC(200,{ error:"Provide matchUrl like https://www.fotmob.com/match/123456" });
 
-    const { html } = await fetchText(matchUrl);
-    const s = nextDataStr(html);
-    if(!s) return resp(200, { error:"NEXT_DATA not found" });
-    const next = safeJSON(s);
-    if(!next) return resp(200, { error:"NEXT_DATA JSON parse failed" });
+    const { html } = await fetchTextC(matchUrl);
+    const s = nextDataStrC(html);
+    if(!s) return respC(200, { error:"NEXT_DATA not found" });
+    const next = safeJSONC(s);
+    if(!next) return respC(200, { error:"NEXT_DATA JSON parse failed" });
 
     const general = extractGeneral(next);
     const potm = extractPOTM(next) || null;
     const node = (playerId || playerName) ? findPlayerNode(next, playerId||null, playerName||null) : null;
 
     const out = buildResult({ matchUrl, general, potm, playerNode: node, playerId, playerName, next });
-    return resp(200, out);
+    return respC(200, out);
 
   }catch(e){
-    return resp(200, { error:String(e) });
+    return respC(200, { error:String(e) });
   }
 }
