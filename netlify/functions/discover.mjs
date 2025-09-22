@@ -1,7 +1,9 @@
+// =============================
 // netlify/functions/discover.mjs
+// =============================
 // Discover 2025–26 Top-5 domestic league matches for FotMob player URLs.
-// Uses player + team __NEXT_DATA__, and enriches via the MATCH HTML page __NEXT_DATA__.
-// Filters to Top-5, in-season, already kicked off. Time-budgeted and always JSON.
+// Uses player + team __NEXT_DATA__, and enriches via each MATCH HTML page __NEXT_DATA__.
+// Filters to Top-5, in-season, already kicked off. Time‑budgeted and returns an ARRAY of per‑player payloads.
 
 const TOP5_LEAGUE_IDS = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START = new Date(Date.UTC(2025, 6, 1));                // 2025-07-01
@@ -87,6 +89,12 @@ function parsePlayerIdFromUrl(url){
 function collectMatchesFromNext(root){
   const matches=[];
   let playerId=null, playerName=null, teamId=null, teamSlug=null;
+
+  // Pre-pass: try to grab a more reliable current team id if present
+  for (const node of walk(root)){
+    const cur = node?.currentTeam?.id || node?.club?.id || node?.team?.id || null;
+    if (cur && teamId == null) teamId = asNum(cur);
+  }
 
   const leagueIdFrom = (it) =>
     asNum(it?.leagueId ?? it?.tournamentId ?? it?.competitionId
@@ -182,6 +190,7 @@ async function enrichIdsViaMatchPage(ids, teamId, debugStage, deadline, debugObj
   const out = [];
   const errs = [];
   let budgetSkipped = 0;
+  let teamMismatchCount = 0;
 
   const work = async (mid) => {
     if (Date.now()+650 > deadline) { budgetSkipped += (q.length + 1); return; }
@@ -196,7 +205,10 @@ async function enrichIdsViaMatchPage(ids, teamId, debugStage, deadline, debugObj
       const iso = ex.iso;
       if (!Number.isFinite(lid) || !TOP5_LEAGUE_IDS.has(lid)) return;
       if (!iso || !inSeasonPast(iso)) return;
-      if (Number.isFinite(teamId) && !(ex.hId===teamId || ex.aId===teamId)) return;
+      if (Number.isFinite(teamId) && !(ex.hId===teamId || ex.aId===teamId)) {
+        // Do NOT reject. FotMob ids can differ across surfaces; just count for debug.
+        teamMismatchCount += 1;
+      }
       out.push({ matchId: Number(mid), leagueId: lid, iso });
     }catch(e){ errs.push(`${mid}: ${String(e).slice(0,110)}`); }
   };
@@ -214,6 +226,7 @@ async function enrichIdsViaMatchPage(ids, teamId, debugStage, deadline, debugObj
   debugObj[debugStage].enrich_kept    = out.length;
   debugObj[debugStage].enrich_errors  = errs.length;
   debugObj[debugStage].budget_skipped = (debugObj[debugStage].budget_skipped||0) + budgetSkipped;
+  debugObj[debugStage].team_mismatch  = (debugObj[debugStage].team_mismatch||0) + teamMismatchCount;
 
   return out;
 }
@@ -221,8 +234,8 @@ async function enrichIdsViaMatchPage(ids, teamId, debugStage, deadline, debugObj
 async function discoverForPlayerUrl(playerUrl, deadline){
   const debug = {
     used: [],
-    player_page: { next_matches: 0, kept: 0, errors: [], enrich_probed:0, enrich_kept:0, enrich_errors:0, budget_skipped:0 },
-    team_pages:  { attempts: 0, next_matches: 0, kept: 0, errors: [], enrich_probed:0, enrich_kept:0, enrich_errors:0, budget_skipped:0 },
+    player_page: { next_matches: 0, kept: 0, errors: [], enrich_probed:0, enrich_kept:0, enrich_errors:0, budget_skipped:0, team_mismatch:0 },
+    team_pages:  { attempts: 0, next_matches: 0, kept: 0, errors: [], enrich_probed:0, enrich_kept:0, enrich_errors:0, budget_skipped:0, team_mismatch:0 },
   };
 
   let player_id = parsePlayerIdFromUrl(playerUrl);
@@ -314,22 +327,19 @@ export async function handler(event){
   const deadline = start + BUDGET_MS;
 
   try{
-    let payload = {};
+    let urls = [];
     if (event.httpMethod === "POST"){
-      try{ payload = JSON.parse(event.body || "{}"); }
-      catch { return resp(400, { ok:false, error:"Provide { urls: [...] }" }); }
+      let payload={};
+      try{ payload = JSON.parse(event.body || "{}"); } catch{}
+      if (Array.isArray(payload?.urls)) urls = payload.urls; else urls = [];
     } else if (event.httpMethod === "GET"){
       const q = event.queryStringParameters?.urls || "";
-      const urls = decodeURIComponent(q).split(/[,\n]/).map(s=>s.trim()).filter(Boolean);
-      payload = { urls };
+      urls = decodeURIComponent(q).split(/[\n,]/).map(s=>s.trim()).filter(Boolean);
     } else {
-      return resp(400, { ok:false, error:"Provide { urls: [...] }" });
+      return resp(200, []);
     }
 
-    const urls = Array.isArray(payload.urls) ? payload.urls : [];
-    if (!urls.length){
-      return resp(200, { ok:false, error:"Provide { urls: [...] }" });
-    }
+    if (!urls.length){ return resp(200, []); }
 
     const players = [];
     for (const u of urls){
@@ -345,8 +355,11 @@ export async function handler(event){
       }
     }
 
-    return resp(200, { ok:true, players, meta:{ ms: Date.now()-start, budget_ms: BUDGET_MS } });
+    // IMPORTANT: return an ARRAY for frontend simplicity.
+    return resp(200, players);
+
   }catch(e){
-    return resp(200, { ok:false, error:String(e), meta:{ ms: Date.now()-start, budget_ms: BUDGET_MS } });
+    // On errors, still return an array (possibly empty) to keep the frontend happy
+    return resp(200, []);
   }
 }
