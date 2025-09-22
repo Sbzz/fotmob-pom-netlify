@@ -34,11 +34,16 @@
     button.secondary{background:#1f2a37;color:#e5eef7;border:1px solid #29415b;box-shadow:none}
     button.ghost{background:transparent;border:1px dashed #2a3c52;color:#c8d6e5}
     button[disabled]{opacity:.6;cursor:not-allowed}
-    .status{padding:14px 16px;border-top:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap}
+    .status{padding:14px 16px;border-top:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap;align-items:center}
     .pill{background:var(--chip);border:1px solid var(--border);color:#d3e0ef;padding:6px 10px;border-radius:999px;font-size:12px}
     .pill.ok{background:rgba(52,211,153,.12);color:var(--ok);border-color:rgba(52,211,153,.35)}
     .pill.warn{background:rgba(245,158,11,.12);color:var(--warn);border-color:rgba(245,158,11,.35)}
     .pill.error{background:rgba(248,113,113,.12);color:var(--error);border-color:rgba(248,113,113,.35)}
+
+    .progress{flex:1 1 200px;min-width:220px;display:flex;align-items:center;gap:8px}
+    .bar{position:relative;flex:1;height:10px;background:#0f141a;border-radius:999px;border:1px solid #223041;overflow:hidden}
+    .bar>span{position:absolute;left:0;top:0;height:100%;width:0%;background:linear-gradient(90deg,var(--accent2),#38bdf8);transition:width .2s ease}
+    .progress small{color:#9fb3c8;font-size:12px;min-width:120px}
 
     .results{margin-top:22px;display:grid;grid-template-columns:1fr;gap:16px}
     .playerCard{padding:16px;border-radius:16px;background:linear-gradient(180deg,var(--card),#0f1318);border:1px solid var(--border)}
@@ -90,7 +95,17 @@
           </div>
         </div>
       </div>
-      <div class="status" id="status"><span class="pill">Idle</span></div>
+      <div class="status" id="status">
+        <span class="pill">Idle</span>
+        <div class="progress" id="discoverProg" style="display:none">
+          <div class="bar"><span></span></div>
+          <small id="discoverLbl">Discovering…</small>
+        </div>
+        <div class="progress" id="checkProg" style="display:none">
+          <div class="bar"><span></span></div>
+          <small id="checkLbl">Checking…</small>
+        </div>
+      </div>
     </div>
 
     <div class="results" id="results"></div>
@@ -102,6 +117,11 @@
   </div>
 
   <script>
+    // ---------- Config ----------
+    const DISCOVER_BATCH_SIZE = 4;          // keep small to respect function budget
+    const DISCOVER_RETRIES = 1;             // retry each batch once if it returns 0 players
+    const DISCOVER_PAUSE_MS = 250;          // slight pause between batches
+
     // ---------- DOM helpers ----------
     const qs=(s,el=document)=>el.querySelector(s);
     const urlsEl=qs('#urls'), matchesEl=qs('#matches'), resultsEl=qs('#results'), statusEl=qs('#status');
@@ -110,8 +130,16 @@
     const btnDownloadPotmOnly=qs('#btnDownloadPotmOnly'), btnDiscoverDebug=qs('#btnDiscoverDebug');
     const btnLoadPlayersCsv=qs('#btnLoadPlayersCsv'), btnLoadUrlCsv=qs('#btnLoadUrlCsv');
 
-    function setStatusPills(pills){ statusEl.innerHTML=''; for(const p of pills){ const e=document.createElement('span'); e.className='pill '+(p.type||''); e.textContent=p.text; statusEl.appendChild(e);} }
-    function appendStatus(text,type=''){ const e=document.createElement('span'); e.className='pill '+type; e.textContent=text; statusEl.appendChild(e); }
+    const discoverProg=qs('#discoverProg'), discoverBar=discoverProg.querySelector('.bar>span'), discoverLbl=qs('#discoverLbl');
+    const checkProg=qs('#checkProg'), checkBar=checkProg.querySelector('.bar>span'), checkLbl=qs('#checkLbl');
+
+    function setStatusPills(pills){ statusEl.querySelectorAll('.pill').forEach(n=>n.remove()); for(const p of pills){ const e=document.createElement('span'); e.className='pill '+(p.type||''); e.textContent=p.text; statusEl.prepend(e);} }
+    function appendStatus(text,type=''){ const e=document.createElement('span'); e.className='pill '+type; e.textContent=text; statusEl.prepend(e); }
+
+    function showDiscoverProgress(show){ discoverProg.style.display=show?'flex':'none'; if(!show){ discoverBar.style.width='0%'; discoverLbl.textContent=''; } }
+    function setDiscoverProgress(done,total){ const pct = total? Math.round((done/total)*100):0; discoverBar.style.width=pct+'%'; discoverLbl.textContent = `Discovering ${done}/${total}`; }
+    function showCheckProgress(show){ checkProg.style.display=show?'flex':'none'; if(!show){ checkBar.style.width='0%'; checkLbl.textContent=''; } }
+    function setCheckProgress(done,total){ const pct = total? Math.round((done/total)*100):0; checkBar.style.width=pct+'%'; checkLbl.textContent = `Checking ${done}/${total}`; }
 
     // ---------- Robust fetch helper ----------
     async function fetchJSONSafe(url, opts={}){
@@ -141,6 +169,9 @@
       };
       next();
     });
+    function chunk(arr, size){ const out=[]; for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size)); return out; }
+    function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
     function downloadCSV(filename, rows){
       const csv=[rows[0].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')]
         .concat(rows.slice(1).map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')))
@@ -180,10 +211,10 @@
 
     function aggregate(rows){
       const ok=(rows||[]).filter(r=>r && !r.error).filter(didAppear);
-      const acc={checked:0,potm:0,goals:0,npg:0,pg:0,assists:0,yc:0,rc:0,fmp:0};
+      const acc={played:0,potm:0,goals:0,npg:0,pg:0,assists:0,yc:0,rc:0,fmp:0};
       for(const r of ok){
         const s=r.player_stats||{};
-        acc.checked+=1;
+        acc.played+=1;
         if(r.player_is_pom) acc.potm+=1;
         const g=Number(s.goals||0), pg=Number(s.penalty_goals||0);
         acc.goals += g; acc.pg += pg; acc.npg += Math.max(0, g-pg);
@@ -205,7 +236,7 @@
 
       const agg=aggregate(p.raw);
       const summary=document.createElement('div'); summary.className='summaryLine';
-      summary.textContent=`• ${nm}: played ${agg.checked}, POTM ${agg.potm} | Goals ${agg.goals} (NPG ${agg.npg}, PG ${agg.pg}) | Ast ${agg.assists} | YC ${agg.yc} | RC ${agg.rc} | FMP ${agg.fmp}`;
+      summary.textContent=`• ${nm}: played ${agg.played}, POTM ${agg.potm} | Goals ${agg.goals} (NPG ${agg.npg}, PG ${agg.pg}) | Ast ${agg.assists} | YC ${agg.yc} | RC ${agg.rc} | FMP ${agg.fmp}`;
       card.appendChild(summary);
 
       const grid=document.createElement('div'); grid.className='grid';
@@ -246,7 +277,7 @@
     const toSummaryCSV=(res)=>{
       const rows=[["player_name","player_url","played","potm","goals","npg","pg","assists","yc","rc","fmp"]];
       for(const p of res){ const a=aggregate(p.raw);
-        rows.push([resolveName(p),p.player_url,a.checked,a.potm,a.goals,a.npg,a.pg,a.assists,a.yc,a.rc,a.fmp]);
+        rows.push([resolveName(p),p.player_url,a.played,a.potm,a.goals,a.npg,a.pg,a.assists,a.yc,a.rc,a.fmp]);
       }
       return rows;
     };
@@ -329,44 +360,67 @@
       btnDownloadSummary.disabled=btnDownloadDetails.disabled=btnDownloadJSON.disabled=btnDownloadPotmOnly.disabled=btnDiscoverDebug.disabled=true;
       setStatusPills([{text:'Reset',type:'ok'}]);
       delete window.__players;
+      showDiscoverProgress(false); showCheckProgress(false);
     }
     btnReset.addEventListener('click', hardReset);
 
-    // ---------- Discover ----------
+    // ---------- Discover (BATCHED) ----------
+    async function runDiscoverBatch(urls){
+      const data = await fetchJSONSafe('/.netlify/functions/discover',{
+        method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ urls })
+      });
+      // Accept either shape: { ok:true, players:[...] } OR array
+      const players = Array.isArray(data?.players) ? data.players : (Array.isArray(data)? data : []);
+      return { players, raw:data };
+    }
+
     btnDiscover.addEventListener('click', async()=>{
-      resultsEl.innerHTML=''; setStatusPills([{text:'Discovering…',type:'warn'}]);
+      resultsEl.innerHTML='';
       const lines=urlsEl.value.split(/\r?\n/).map(s=>normalizePlayerUrl(s)).filter(Boolean);
       if(!lines.length){ setStatusPills([{text:'Paste at least one FotMob player URL',type:'error'}]); return; }
 
-      try{
-        const data=await fetchJSONSafe('/.netlify/functions/discover',{
-          method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ urls: lines })
-        });
-        const okShape = Array.isArray(data?.players) ? data.players : (Array.isArray(data) ? data : []);
-        const players= okShape || [];
-        const all=[];
-        for(const p of players){ (p.match_urls||[]).forEach(u=>all.push(u)); }
-        matchesEl.value=all.join('\n');
+      setStatusPills([{text:`Running discover for ${lines.length} players…`,type:'warn'}]);
+      showDiscoverProgress(true); setDiscoverProgress(0, lines.length);
 
-        setStatusPills([{text:`Players: ${players.length}`,type:'ok'},{text:`Matches found: ${all.length}`,type:all.length?'ok':'warn'}]);
+      const batches = chunk(lines, DISCOVER_BATCH_SIZE);
+      const allPlayers=[]; const allMatchUrls=[]; const debugPack=[];
+      let done=0;
 
-        window.__players = players.map(p=>({
-          player_url:p.player_url,
-          player_name:(p.player_name||'').trim() || (p.player_url.split('/').pop()||'').replace(/-/g,' '),
-          player_id:p.player_id || (p.player_url && (p.player_url.match(/\/players\/(\d+)/)||[])[1]) || null,
-          match_urls:(p.match_urls||[])
-        }));
+      for(let i=0;i<batches.length;i++){
+        const batch=batches[i];
+        let attempt=0, res=null;
+        do{
+          attempt++;
+          appendStatus(`[${new Date().toLocaleTimeString()}] Discover batch ${i+1}/${batches.length} (${batch.length} urls)…`, 'warn');
+          try{ res = await runDiscoverBatch(batch); }catch(e){ res=null; }
+          if(!res || !res.players || res.players.length===0){
+            appendStatus(`Batch ${i+1} returned empty${attempt<=DISCOVER_RETRIES? ' — retrying…':''}`,'error');
+            if(attempt<=DISCOVER_RETRIES) await sleep(400);
+          }
+        } while((!res || !res.players || res.players.length===0) && attempt<=DISCOVER_RETRIES);
 
-        lastDiscoverDebug = (players||[]).map(p=>({
-          player_url:p.player_url, player_id:p.player_id, team_id:p.team_id, team_slug:p.team_slug,
-          matches_found:(p.match_urls||[]).length, debug:p.debug
-        }));
-        btnDiscoverDebug.disabled = !(lastDiscoverDebug && lastDiscoverDebug.length);
-        console.log('DISCOVER DEBUG:', lastDiscoverDebug);
-
-      }catch(e){
-        setStatusPills([{text:`Discover error: ${String(e).slice(0,180)}`,type:'error'}]);
+        const players = (res && res.players) ? res.players : [];
+        for(const p of players){
+          allPlayers.push(p);
+          for(const u of (p.match_urls||[])) allMatchUrls.push(u);
+          debugPack.push({ player_url:p.player_url, player_id:p.player_id, team_id:p.team_id, team_slug:p.team_slug, matches_found:(p.match_urls||[]).length, debug:p.debug });
+        }
+        done += batch.length; setDiscoverProgress(done, lines.length);
+        await sleep(DISCOVER_PAUSE_MS);
       }
+
+      matchesEl.value = Array.from(new Set(allMatchUrls)).join('\n');
+      window.__players = allPlayers.map(p=>({
+        player_url:p.player_url,
+        player_name:(p.player_name||'').trim() || (p.player_url.split('/').pop()||'').replace(/-/g,' '),
+        player_id:p.player_id || (p.player_url && (p.player_url.match(/\/players\/(\d+)/)||[])[1]) || null,
+        match_urls:(p.match_urls||[])
+      }));
+
+      lastDiscoverDebug = debugPack; btnDiscoverDebug.disabled = !(lastDiscoverDebug && lastDiscoverDebug.length);
+
+      setStatusPills([{text:`Players: ${allPlayers.length}`,type:'ok'},{text:`Matches found: ${allMatchUrls.length}`,type:allMatchUrls.length?'ok':'warn'}]);
+      showDiscoverProgress(false);
     });
 
     // ---------- Run checks ----------
@@ -379,7 +433,10 @@
       const players=discovered.length?discovered:[{player_url:'',player_name:'',player_id:null,match_urls:pasted}];
       const results=[];
 
-      for(const p of players){
+      showCheckProgress(true); setCheckProgress(0, players.length);
+
+      for(let pi=0; pi<players.length; pi++){
+        const p = players[pi];
         const matchUrls=(p.match_urls&&p.match_urls.length)?p.match_urls:pasted.filter(u=>/\/match\/\d+/.test(u));
         const pid=p.player_id?Number(p.player_id):null;
         const tasks=matchUrls.map(u=>({ matchUrl:u, playerId:pid, playerName:p.player_name||'' }));
@@ -408,6 +465,7 @@
 
         results.push({ player_url:p.player_url, player_name:p.player_name, raw: ok2 });
         appendStatus(`✓ ${resolveName({player_name:p.player_name,player_url:p.player_url})}: ${ok2.filter(didAppear).length} played`,'ok');
+        setCheckProgress(pi+1, players.length);
       }
 
       resultsEl.innerHTML='';
@@ -421,6 +479,7 @@
       btnDownloadSummary.disabled = btnDownloadDetails.disabled = btnDownloadJSON.disabled = btnDownloadPotmOnly.disabled = false;
 
       setStatusPills([{text:`Players processed: ${results.length}`,type:'ok'},{text:`Matches (played): ${results.reduce((a,p)=>a+p.raw.filter(didAppear).length,0)}`,type:'ok'}]);
+      showCheckProgress(false);
     });
 
     // ---------- Downloads ----------
