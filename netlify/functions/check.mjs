@@ -1,8 +1,7 @@
 // =============================
-// netlify/functions/check.mjs
+// netlify/functions/check.mjs  (UNCHANGED from your last working version)
 // =============================
-// Fixes PG/NPG and RC via event dedup + strict penalty detection + sane clamps.
-// Adds minutes_played + player_did_play flag. Leaves discovery, POTM, FMP, league/season filters, fixture key, and UI contract unchanged.
+// Leaves discovery, POTM, FMP, assists, league/season filters, fixture key, and UI contract unchanged.
 
 const TOP5_LEAGUE_IDS_C = new Set([47, 87, 54, 55, 53]); // PL, LaLiga, Bundesliga, Serie A, Ligue 1
 const SEASON_START_C = new Date(Date.UTC(2025, 6, 1));                // 2025-07-01
@@ -263,7 +262,6 @@ function extractFromEvents(root, playerId, playerName){
     return s.includes('own') || s.includes('og') || e?.isOwnGoal === true;
   };
   const isPenaltyGoal = (e) => {
-    // only evaluated on confirmed goals; detects multiple penalty wordings
     const s = [
       e?.type, e?.eventType, e?.scoringType, e?.goalType, e?.detail, e?.subType, e?.situation, e?.description,
       e?.shotType && e.shotType.name, e?.code, e?.result
@@ -356,7 +354,7 @@ function extractFromEvents(root, playerId, playerName){
         }
       }
 
-      // ASSISTS (fallback only)
+      // ASSISTS
       const hasGoalShape = isGoalEvent(e) && !isOwnGoal(e);
       if(hasGoalShape){
         const aIds = [];
@@ -479,7 +477,6 @@ function buildResult({ matchUrl, general, potm, playerNode, playerId, playerName
   const league_name = general.leagueName || null;
   const iso         = general.iso || null;
 
-  // 1) Base stats block
   const base = extractStatsFromStatsBlocks(playerNode);
   let goals_stat = Number.isFinite(base.goals) ? base.goals : null;
   let pg_stat    = Number.isFinite(base.penalty_goals) ? base.penalty_goals : null;
@@ -489,51 +486,26 @@ function buildResult({ matchUrl, general, potm, playerNode, playerId, playerName
   let mins       = Number.isFinite(base.minutes_played) ? base.minutes_played : 0;
   let rating     = Number.isFinite(base.rating) ? base.rating : null;
 
-  // 2) Events (authoritative for PG + cards), 3) Shotmap fallback (PG/goals)
   const ev = extractFromEvents(next, playerId, playerName);
   const sm = extractFromShotmap(next, playerId, playerName);
 
-  // ---- Merge policy ----
-  // Goals overall
   let goals = Number.isFinite(goals_stat) ? goals_stat : (ev.goals || sm.goals || 0);
-
-  // PG: prefer events; then shotmap; then stats
-  let pg = (ev.penalty_goals > 0 ? ev.penalty_goals :
-           (sm.penalty_goals > 0 ? sm.penalty_goals :
-           (Number.isFinite(pg_stat) ? pg_stat : 0)));
-
-  // Ensure PG never exceeds goals
+  let pg = (ev.penalty_goals > 0 ? ev.penalty_goals : (sm.penalty_goals > 0 ? sm.penalty_goals : (Number.isFinite(pg_stat) ? pg_stat : 0)));
   if(pg > goals) pg = goals;
 
-  // Assists: keep stats unless missing -> use events
   let assists = ast || ev.assists || 0;
 
-  // Cards: prefer events; then facts/bookings; then stats
   const facts = extractCardsFromFacts(next, playerId, playerName);
   let yc = (ev.yellow_cards > 0 ? ev.yellow_cards : (facts.yellow > 0 ? facts.yellow : (Number.isFinite(yc_stat) ? yc_stat : 0)));
   let rc = (ev.red_cards    > 0 ? ev.red_cards    : (facts.red    > 0 ? facts.red    : (Number.isFinite(rc_stat) ? rc_stat : 0)));
-
-  // Clamp RC to max 1 (sent off once)
   if(rc > 1) rc = 1;
 
-  // Minutes → FMP
   const fmp = clampInt(mins) >= 90;
 
-  // POTM flag
   const pid = asNumC(playerId);
-  const player_is_pom =
-    !!potm && ((pid && potm.id && pid === potm.id) || (!pid && potm.name && normName(potm.name) === normName(playerName||'')));
+  const player_is_pom = !!potm && ((pid && potm.id && pid === potm.id) || (!pid && potm.name && normName(potm.name) === normName(playerName||'')));
 
-  const fixture_key = mkFixtureKey(
-    league_id, iso,
-    general.hId, general.aId,
-    general.hName, general.aName
-  );
-
-  // Appearance flag (useful for frontend DNP filter)
-  const appeared = (clampInt(mins) > 0) ||
-                   (Number.isFinite(rating)) ||
-                   ((goals+assists+yc+rc+pg) > 0);
+  const fixture_key = mkFixtureKey(league_id, iso, general.hId, general.aId, general.hName, general.aName);
 
   return {
     match_url: matchUrl,
@@ -562,16 +534,13 @@ function buildResult({ matchUrl, general, potm, playerNode, playerId, playerName
       assists: clampInt(assists),
       yellow_cards: clampInt(yc),
       red_cards: clampInt(rc),
-      full_match_played: !!fmp,
-      minutes_played: clampInt(mins)
+      full_match_played: !!fmp
     },
-    player_did_play: appeared,
     echo_player_name: (playerNode && playerNode.name && (playerNode.name.fullName || playerNode.name)) || playerName || null,
     source: "fotmob_html+events_dedup"
   };
 }
 
-// ---------- Handler ----------
 export async function handler(event){
   try{
     if(event.httpMethod!=="POST"){
