@@ -2,356 +2,350 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>FotMob — POTM & Stats (Top-5, 2025–26)</title>
+  <title>POTM & Match Stats — Top 5 Leagues (2025–26)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
-      --bg:#0b1220;--card:#0f172a;--muted:#94a3b8;--text:#e5e7eb;
-      --accent:#4f46e5;--accent-2:#10b981;--danger:#ef4444;--warn:#f59e0b;
-      --code:#0b1020;--success-bg:#062b1a;--success-border:#0ea861;
-      --error-bg:#311016;--error-border:#f87171;--border:#1f2937;
+      --bg:#0b0d10; --card:#12161b; --muted:#151b23; --text:#e9eef5; --sub:#9fb3c8;
+      --accent:#6ee7b7; --accent2:#60a5fa; --warn:#f59e0b; --error:#f87171; --ok:#34d399;
+      --chip:#1f2937; --border:#223041; --shadow:0 10px 30px rgba(0,0,0,.35); --radius:16px;
     }
     *{box-sizing:border-box}
-    body{background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;margin:0;padding:32px 16px 56px}
-    .container{max-width:1100px;margin:0 auto}
-    h1{margin:0 0 12px;font-size:28px;font-weight:700}
-    p.muted{color:var(--muted);margin-top:0}
-    .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
-    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-    @media (max-width:860px){.grid,.grid-2{grid-template-columns:1fr}}
-    .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:0 8px 16px rgba(0,0,0,.25)}
-    label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
-    textarea,input,button{width:100%;padding:12px;border-radius:10px;border:1px solid #233044;background:#0b1220;color:var(--text);outline:none}
-    textarea::placeholder,input::placeholder{color:#6b7280}
-    textarea:focus,input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(79,70,229,.25)}
-    .row{display:flex;gap:10px;flex-wrap:wrap}
-    .btn{border:1px solid #2b374f;background:linear-gradient(180deg,#1b2540,#151e35);color:#fff;cursor:pointer;transition:transform .06s ease,box-shadow .2s ease;font-weight:600}
-    .btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(16,24,40,.35)}
-    .btn:disabled{opacity:.6;cursor:not-allowed}
-    .btn-accent{background:linear-gradient(180deg,#5661ff,#3843d0);border-color:#3641c8}
-    .btn-green{background:linear-gradient(180deg,#16c78a,#0ea66f);border-color:#0ea66f}
-    .badge{display:inline-block;padding:6px 10px;border-radius:999px;font-size:12px;border:1px solid #334155;background:#0b1325;color:#cbd5e1}
-    .badge.warn{border-color:var(--warn);color:#fde68a}
-    .badge.ok{border-color:var(--success-border);color:#a7f3d0;background:var(--success-bg)}
-    .badge.err{border-color:var(--danger);color:#fecaca;background:var(--error-bg)}
-    pre{background:var(--code);border:1px solid var(--border);border-radius:12px;padding:14px;overflow:auto;max-height:520px;font-size:13px;line-height:1.35}
-    .summary{background:#10223a;border:1px solid #244a78;border-radius:12px;padding:12px 14px;white-space:pre-wrap;font-weight:600}
-    .muted-small{color:var(--muted);font-size:12px}
-    table{width:100%;border-collapse:separate;border-spacing:0 8px}
-    thead th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#a8b3c7;text-align:left;padding:6px 10px}
-    tbody td{background:#0c1528;border:1px solid #1b2740;padding:10px 12px}
-    tbody tr td:first-child{border-top-left-radius:10px;border-bottom-left-radius:10px}
-    tbody tr td:last-child{border-top-right-radius:10px;border-bottom-right-radius:10px}
-    .progress-bar{height:12px;background:#1e293b;border-radius:8px;overflow:hidden;margin-bottom:6px}
-    .progress-fill{
-      height:100%;
-      background:linear-gradient(90deg,#4f46e5,#10b981);
-      width:0%;
-      transition:width 0.3s ease, background 0.4s ease;
-    }
-    .progress-fill.done{ background:#16c78a; }
+    body{margin:0;background:linear-gradient(180deg,#0a0c10,#0b0d10 40%,#0b0d10);color:var(--text);
+         font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial}
+    a{color:var(--accent2);text-decoration:none}
+    .wrap{max-width:1100px;margin:40px auto;padding:0 18px}
+    header{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+    header .logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:var(--shadow)}
+    header h1{font-size:22px;margin:0}
+    .tag{margin-left:auto;background:rgba(110,231,183,.12);color:var(--accent);padding:6px 10px;border-radius:999px;border:1px solid rgba(110,231,183,.35);font-size:12px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+    .controls{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:16px}
+    .block{background:var(--muted);border:1px solid var(--border);border-radius:12px;padding:12px}
+    label{display:block;font-size:12px;color:var(--sub);margin-bottom:8px}
+    textarea{width:100%;background:#0f141a;color:var(--text);border:1px solid #223041;border-radius:10px;padding:10px 12px;resize:vertical;min-height:96px}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}
+    button{appearance:none;border:0;background:linear-gradient(135deg,var(--accent2),#38bdf8);color:#0b1220;padding:10px 14px;border-radius:12px;font-weight:700;cursor:pointer;box-shadow:var(--shadow)}
+    button.secondary{background:#1f2a37;color:#e5eef7;border:1px solid #29415b;box-shadow:none}
+    button.ghost{background:transparent;border:1px dashed #2a3c52;color:#c8d6e5}
+    button[disabled]{opacity:.6;cursor:not-allowed}
+    .status{padding:14px 16px;border-top:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap}
+    .pill{background:var(--chip);border:1px solid var(--border);color:#d3e0ef;padding:6px 10px;border-radius:999px;font-size:12px}
+    .pill.ok{background:rgba(52,211,153,.12);color:var(--ok);border-color:rgba(52,211,153,.35)}
+    .pill.warn{background:rgba(245,158,11,.12);color:var(--warn);border-color:rgba(245,158,11,.35)}
+    .pill.error{background:rgba(248,113,113,.12);color:var(--error);border-color:rgba(248,113,113,.35)}
+    .results{margin-top:22px;display:grid;grid-template-columns:1fr;gap:16px}
+    .playerCard{padding:16px;border-radius:16px;background:linear-gradient(180deg,var(--card),#0f1318);border:1px solid var(--border)}
+    .head{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:8px}
+    .head .name{font-weight:800;font-size:18px}
+    .summaryLine{background:rgba(96,165,250,.11);border:1px solid rgba(96,165,250,.35);color:#dbeafe;padding:10px 12px;border-radius:12px;font-size:14px;line-height:1.4;box-shadow:var(--shadow)}
+    .grid{overflow:auto;border:1px solid var(--border);border-radius:12px;margin-top:12px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{padding:10px 12px;border-bottom:1px solid #1f2a33;white-space:nowrap}
+    th{position:sticky;top:0;background:#10151b;color:#9fb3c8;font-weight:700}
+    tr:hover td{background:#0f141a}
+    .footerActions{margin-top:20px;display:flex;gap:10px;flex-wrap:wrap}
+    .small{font-size:12px}.muted{color:#9fb3c8}
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>FotMob — POTM & Stats (Top-5, 2025–26)</h1>
-    <p class="muted">Paste FotMob player URLs or load <code>url.csv</code> for batch processing. Season restricted to 2025–26, Top-5 leagues.</p>
+  <div class="wrap">
+    <header>
+      <div class="logo"></div>
+      <h1>POTM & Match Stats (Top-5 Leagues • 2025–26)</h1>
+      <span class="tag">Netlify Functions</span>
+    </header>
 
-    <div class="card" style="margin-bottom:14px">
-      <div class="grid">
-        <div>
-          <label>Player URLs (one per line)</label>
-          <textarea id="urls" rows="7" placeholder="https://www.fotmob.com/players/1467236/lamine-yamal
-https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
-          <button class="btn" id="btnLoadCSV" style="margin-top:8px">Load url.csv</button>
-        </div>
-        <div>
-          <label>Max matches per player (cap)</label>
-          <input id="maxMatches" type="number" min="0" value="80" />
-          <div class="muted-small">0 = no cap.</div>
-          <label style="margin-top:12px">Check concurrency (per player)</label>
-          <input id="concurrency" type="number" min="1" value="3" />
-          <label style="margin-top:12px">Actions</label>
+    <div class="card">
+      <div class="controls">
+        <div class="block">
+          <label>Player profile URLs (one per line)</label>
+          <textarea id="urls" placeholder="https://www.fotmob.com/players/1467236/lamine-yamal&#10;https://www.fotmob.com/players/1021382/joao-pedro"></textarea>
           <div class="row">
-            <button id="run" class="btn btn-accent">Run</button>
-            <button id="downloadCsvDetails" class="btn btn-green" disabled>Download Details (CSV)</button>
+            <button id="btnDiscover">1) Discover Matches</button>
+            <button class="secondary" id="btnReset">Reset</button>
+          </div>
+          <div class="row small muted">Season: 2025–26 • Leagues: PL, LaLiga, Bundesliga, Serie A, Ligue 1</div>
+        </div>
+
+        <div class="block">
+          <label>Discovered match URLs (auto) — you can paste match links here</label>
+          <textarea id="matches"></textarea>
+          <div class="row">
+            <button id="btnRun">2) Run Checks</button>
+            <button class="ghost" id="btnDownloadSummary" disabled>Download Summary CSV</button>
+            <button class="ghost" id="btnDownloadDetails" disabled>Download Details CSV</button>
+            <button class="ghost" id="btnDownloadPotmOnly" disabled>Download POTM Table</button>
+            <button class="ghost" id="btnDiscoverDebug" disabled>Download Discover Debug</button>
           </div>
         </div>
       </div>
+      <div class="status" id="status"><span class="pill">Idle</span></div>
     </div>
 
-    <div class="card" style="margin-bottom:14px">
-      <div class="row" style="align-items:center; justify-content:space-between">
-        <div><span class="badge" id="statusTag">Idle</span></div>
-      </div>
-      <div class="summary" id="summaryBox" style="margin-top:10px">—</div>
-    </div>
+    <div class="results" id="results"></div>
 
-    <div class="grid-2" style="margin-bottom:14px">
-      <div class="card">
-        <h3 style="margin-top:0">Status</h3>
-        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
-        <pre id="status">—</pre>
-      </div>
-      <div class="card">
-        <h3 style="margin-top:0">Output (JSON)</h3>
-        <pre id="out">—</pre>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3 style="margin:0 0 10px">Match Results</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Match</th><th>League</th><th>POTM?</th><th>Rating</th><th>G</th><th>NPG</th><th>PG</th><th>A</th><th>YC</th><th>RC</th><th>FMP</th>
-          </tr>
-        </thead>
-        <tbody id="resultsBody">
-          <tr><td class="muted" colspan="11">—</td></tr>
-        </tbody>
-      </table>
+    <div class="footerActions">
+      <button class="ghost" id="btnDownloadJSON" disabled>Download JSON</button>
+      <span class="small muted">Summary = per-player totals. Details = per-match rows. POTM Table = “player | POTM count”.</span>
     </div>
   </div>
 
   <script>
-  (function(){
-    const qs = s => document.querySelector(s);
-    const urlsEl = qs('#urls');
-    const btnLoadCSV = qs('#btnLoadCSV');
-    const btnRun = qs('#run');
-    const statusEl = qs('#status');
-    const statusTag = qs('#statusTag');
-    const summaryBox = qs('#summaryBox');
-    const out = qs('#out');
-    const resultsBody = qs('#resultsBody');
-    const dlDetails = qs('#downloadCsvDetails');
-    const progressFill = qs('#progressFill');
+    // ---------- DOM helpers ----------
+    const qs=(s,el=document)=>el.querySelector(s);
+    const urlsEl=qs('#urls'), matchesEl=qs('#matches'), resultsEl=qs('#results'), statusEl=qs('#status');
+    const btnDiscover=qs('#btnDiscover'), btnReset=qs('#btnReset'), btnRun=qs('#btnRun');
+    const btnDownloadSummary=qs('#btnDownloadSummary'), btnDownloadDetails=qs('#btnDownloadDetails'), btnDownloadJSON=qs('#btnDownloadJSON');
+    const btnDownloadPotmOnly=qs('#btnDownloadPotmOnly'), btnDiscoverDebug=qs('#btnDiscoverDebug');
 
-    let lastDetailsCSV = "";
+    function setStatusPills(pills){ statusEl.innerHTML=''; for(const p of pills){ const e=document.createElement('span'); e.className='pill '+(p.type||''); e.textContent=p.text; statusEl.appendChild(e);} }
+    function appendStatus(text,type=''){ const e=document.createElement('span'); e.className='pill '+type; e.textContent=text; statusEl.appendChild(e); }
 
-    function setTag(t, k){ statusTag.textContent = t; statusTag.className = 'badge ' + (k||''); }
+    // ---------- Robust fetch helper ----------
+    async function fetchJSONSafe(url, opts={}){
+      const res  = await fetch(url, opts);
+      const text = await res.text();
+      let data = null;
+      try{ data = text ? JSON.parse(text) : null; }
+      catch(e){ throw new Error(`Bad JSON from ${url} (status ${res.status}). Body: ${text?.slice(0,200)||'<empty>'}`); }
+      if(!res.ok){
+        const msg=(data&&(data.error||data.message))||text||`HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      return data;
+    }
 
-    btnLoadCSV.addEventListener('click', async ()=>{
-      try {
-        let res = await fetch('/url.csv');
-        if (!res.ok) res = await fetch('/public/url.csv');
-        if (!res.ok) throw new Error('url.csv not found');
-        const text = await res.text();
-        // handle BOM & header
-        const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-        const urls = [];
-        for (const l of lines) {
-          // Accept two formats: "name,url" OR just "url"
-          const parts = l.split(',').map(p => p.trim());
-          if (parts.length === 1) {
-            urls.push(parts[0]);
-          } else {
-            // take last column as URL (safe for "name,url" and if name contains comma)
-            urls.push(parts.slice(-1)[0]);
-          }
+    // ---------- Utils ----------
+    const throttleQueue=(items,limit,worker)=>new Promise(resolve=>{
+      let i=0, active=0, out=[];
+      const next=()=>{ if(i>=items.length && active===0) return resolve(out);
+        while(active<limit && i<items.length){
+          const idx=i++, item=items[idx]; active++;
+          Promise.resolve(worker(item,idx))
+            .then(res=>{ out[idx]=res; })
+            .catch(err=>{ out[idx]={error:String(err)}; })
+            .finally(()=>{ active--; next(); });
         }
-        urlsEl.value = urls.join('\n');
-        summaryBox.textContent = `Loaded ${urls.length} URLs from url.csv`;
-      } catch (e) {
-        summaryBox.textContent = `CSV load error: ${String(e)}`;
+      };
+      next();
+    });
+    function downloadCSV(filename, rows){
+      const csv=[rows[0].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')]
+        .concat(rows.slice(1).map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')))
+        .join('\r\n');
+      const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}), url=URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    }
+    function downloadJSON(filename,obj){
+      const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
+      const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    }
+
+    const slugToName=(url)=>{ try{ const parts=new URL(url||'').pathname.split('/'); const slug=decodeURIComponent(parts[parts.length-1]||'').replace(/-/g,' ').trim(); return slug?slug.replace(/\b\w/g,c=>c.toUpperCase()):''; }catch{ return ''; } };
+    const resolveName=(player)=>{ const a=(player?.player_name||'').trim(); if(a) return a;
+      for(const r of (player?.raw||[])){ if(r && r.echo_player_name){ const n=String(r.echo_player_name).trim(); if(n) return n; } }
+      return slugToName(player?.player_url||'') || '(unknown)'; };
+    const pidFromUrl=(u)=>{ const m=(u||'').match(/\/players\/(\d+)(?:\/|$)/); return m?Number(m[1]):null; };
+
+    function aggregate(rows){
+      const ok=(rows||[]).filter(r=>r && !r.error);
+      const acc={checked:0,potm:0,goals:0,npg:0,pg:0,assists:0,yc:0,rc:0,fmp:0};
+      for(const r of ok){
+        const s=r.player_stats||{};
+        acc.checked+=1;
+        if(r.player_is_pom) acc.potm+=1;
+        const g=Number(s.goals||0), pg=Number(s.penalty_goals||0);
+        acc.goals += g; acc.pg += pg; acc.npg += Math.max(0, g-pg);
+        acc.assists += Number(s.assists||0);
+        acc.yc += Number(s.yellow_cards||0);
+        acc.rc += Number(s.red_cards||0);
+        acc.fmp += (s.full_match_played?1:0);
+      }
+      for(const k of Object.keys(acc)) acc[k]=Math.trunc(acc[k]);
+      return acc;
+    }
+
+    function renderPlayerCard(p){
+      const nm=resolveName(p);
+      const card=document.createElement('div'); card.className='playerCard';
+      const head=document.createElement('div'); head.className='head';
+      head.innerHTML=`<div class="name">${nm}</div><div class="muted small">${p.player_url||''}</div>`;
+      card.appendChild(head);
+
+      const agg=aggregate(p.raw);
+      const summary=document.createElement('div'); summary.className='summaryLine';
+      summary.textContent=`• ${nm}: checked ${agg.checked}, POTM ${agg.potm} | Goals ${agg.goals} (NPG ${agg.npg}, PG ${agg.pg}) | Ast ${agg.assists} | YC ${agg.yc} | RC ${agg.rc} | FMP ${agg.fmp}`;
+      card.appendChild(summary);
+
+      const grid=document.createElement('div'); grid.className='grid';
+      const table=document.createElement('table'); table.innerHTML=`
+        <thead>
+          <tr>
+            <th>Match</th><th>League</th><th>Date (UTC)</th>
+            <th>POTM?</th><th>Rating</th>
+            <th>G</th><th>NPG</th><th>PG</th><th>A</th><th>YC</th><th>RC</th><th>FMP</th><th>Source</th>
+          </tr>
+        </thead>
+        <tbody></tbody>`;
+      const tb=table.querySelector('tbody');
+      for(const r of (p.raw||[])){
+        const s=r.player_stats||{};
+        const tr=document.createElement('tr'); tr.innerHTML=`
+          <td><a href="${r.match_url}" target="_blank" rel="noopener">${r.match_title||r.resolved_match_id||'match'}</a></td>
+          <td>${r.league_label??''}</td>
+          <td>${r.match_datetime_utc??''}</td>
+          <td>${r.player_is_pom?'✅':''}</td>
+          <td>${(r.player_rating!=null?Number(r.player_rating).toFixed(2):'')}</td>
+          <td>${s.goals??''}</td>
+          <td>${Math.max(0, Number(s.goals||0)-Number(s.penalty_goals||0))}</td>
+          <td>${s.penalty_goals??''}</td>
+          <td>${s.assists??''}</td>
+          <td>${s.yellow_cards??''}</td>
+          <td>${s.red_cards??''}</td>
+          <td>${s.full_match_played?'90+':''}</td>
+          <td class="muted small">${r.source||''}</td>`;
+        tb.appendChild(tr);
+      }
+      grid.appendChild(table); card.appendChild(grid);
+      return card;
+    }
+
+    // ---------- State for downloads ----------
+    let lastSummary=[], lastDetails=[], lastPotmOnly=[], lastJSON=null, lastDiscoverDebug=null;
+
+    const toSummaryCSV=(res)=>{
+      const rows=[["player_name","player_url","checked","potm","goals","npg","pg","assists","yc","rc","fmp"]];
+      for(const p of res){ const a=aggregate(p.raw);
+        rows.push([resolveName(p),p.player_url,a.checked,a.potm,a.goals,a.npg,a.pg,a.assists,a.yc,a.rc,a.fmp]);
+      }
+      return rows;
+    };
+    const toPotmOnlyCSV=(res)=>{
+      const rows=[["player_name","player_url","potm"]];
+      for(const p of res){ const a=aggregate(p.raw); rows.push([resolveName(p),p.player_url,a.potm]); }
+      return rows;
+    };
+    const toDetailsCSV=(res)=>{
+      const rows=[["player_name","player_url","match_url","match_title","league","date_utc","potm","rating","goals","npg","pg","assists","yc","rc","fmp","source"]];
+      for(const p of res){ for(const r of (p.raw||[])){ const s=r.player_stats||{};
+        rows.push([resolveName(p),p.player_url,r.match_url,r.match_title||r.resolved_match_id||'',r.league_label??'',r.match_datetime_utc??'',r.player_is_pom?"1":"0",(r.player_rating!=null?String(Number(r.player_rating).toFixed(2)):""),s.goals??'',Math.max(0, Number(s.goals||0)-Number(s.penalty_goals||0)),s.penalty_goals??'',s.assists??'',s.yellow_cards??'',s.red_cards??'',s.full_match_played?"1":"0",r.source||'']);
+      }} return rows;
+    };
+
+    // ---------- UI actions ----------
+    btnReset.addEventListener('click',()=>{
+      urlsEl.value=''; matchesEl.value=''; resultsEl.innerHTML='';
+      lastSummary=[]; lastDetails=[]; lastPotmOnly=[]; lastJSON=null; lastDiscoverDebug=null;
+      btnDownloadSummary.disabled=btnDownloadDetails.disabled=btnDownloadJSON.disabled=btnDownloadPotmOnly.disabled=btnDiscoverDebug.disabled=true;
+      setStatusPills([{text:'Reset',type:'ok'}]);
+    });
+
+    btnDiscover.addEventListener('click', async()=>{
+      resultsEl.innerHTML=''; setStatusPills([{text:'Discovering…',type:'warn'}]);
+      const lines=urlsEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+      if(!lines.length){ setStatusPills([{text:'Paste at least one FotMob player URL',type:'error'}]); return; }
+
+      try{
+        const data=await fetchJSONSafe('/.netlify/functions/discover',{
+          method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ urls: lines })
+        });
+        if(!data||!data.ok) throw new Error((data&&data.error)||'Discover failed');
+
+        const players=data.players||[]; const all=[];
+        for(const p of players){ (p.match_urls||[]).forEach(u=>all.push(u)); }
+        matchesEl.value=all.join('\n');
+
+        setStatusPills([{text:`Players: ${players.length}`,type:'ok'},{text:`Matches found: ${all.length}`,type:all.length?'ok':'warn'}]);
+
+        // save for run
+        window.__players = players.map(p=>({
+          player_url:p.player_url,
+          player_name:(p.player_name||'').trim() || (p.player_url.split('/').pop()||'').replace(/-/g,' '),
+          player_id:p.player_id || (p.player_url && (p.player_url.match(/\/players\/(\d+)/)||[])[1]) || null,
+          match_urls:(p.match_urls||[])
+        }));
+
+        // debug block for download
+        lastDiscoverDebug = (players||[]).map(p=>({
+          player_url:p.player_url, player_id:p.player_id, team_id:p.team_id, team_slug:p.team_slug,
+          matches_found:(p.match_urls||[]).length, debug:p.debug
+        }));
+        btnDiscoverDebug.disabled = !(lastDiscoverDebug && lastDiscoverDebug.length);
+        console.log('DISCOVER DEBUG:', lastDiscoverDebug);
+
+      }catch(e){
+        setStatusPills([{text:`Discover error: ${String(e).slice(0,180)}`,type:'error'}]);
       }
     });
 
-    function toDetailsCSV(bundles){
-      const rows=[["player_name","player_url","match_url","match_title","league","potm","rating","goals","npg","pg","assists","yc","rc","fmp"]];
-      function rname(p){ return p.player_name || ""; }
-      for (const p of bundles){
-        for (const r of (p.raw||[])){
-          if (!r || !r.match_url) continue;
-          const s = r.stats || {};
-          rows.push([
-            rname(p), p.player_url || "", r.match_url || "", r.match_title || r.resolved_match_id || "", r.league_label ?? "",
-            r.player_is_pom ? "1" : "0",
-            (r.player_rating!=null?String(Number(r.player_rating).toFixed(2)):""),
-            s.goals??'', Math.max(0, Number(s.goals||0) - Number(s.penalty_goals||0)),
-            s.penalty_goals??'', s.assists??'', s.yellow_cards??'', s.red_cards??'', s.full_match_played ? "1":"0"
-          ]);
-        }
-      }
-      return rows.map(r=>r.join(",")).join("\n");
-    }
+    btnRun.addEventListener('click', async()=>{
+      resultsEl.innerHTML=''; setStatusPills([{text:'Checking matches…',type:'warn'}]);
+      btnDownloadSummary.disabled=btnDownloadDetails.disabled=btnDownloadJSON.disabled=btnDownloadPotmOnly.disabled=true;
 
-    function renderResults(bundles){
-      resultsBody.innerHTML = "";
-      for (const p of bundles){
-        for (const r of (p.raw||[])){
-          if (!r || !r.match_url) continue;
-          const s = r.stats || {};
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td>${r.match_title || r.resolved_match_id || ''}</td>
-            <td>${r.league_label ?? ''}</td>
-            <td>${r.player_is_pom ? "✓" : ""}</td>
-            <td>${r.player_rating ?? ''}</td>
-            <td>${s.goals ?? ''}</td>
-            <td>${Math.max(0, Number(s.goals || 0) - Number(s.penalty_goals || 0))}</td>
-            <td>${s.penalty_goals ?? ''}</td>
-            <td>${s.assists ?? ''}</td>
-            <td>${s.yellow_cards ?? ''}</td>
-            <td>${s.red_cards ?? ''}</td>
-            <td>${s.full_match_played ? "✓" : ""}</td>
-          `;
-          resultsBody.appendChild(tr);
-        }
-      }
-      if (!resultsBody.children.length) resultsBody.innerHTML = '<tr><td class="muted" colspan="11">No results</td></tr>';
-    }
+      const discovered=(window.__players&&window.__players.length)?window.__players:[];
+      const pasted=matchesEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+      const players=discovered.length?discovered:[{player_url:'',player_name:'',player_id:null,match_urls:pasted}];
+      const results=[];
 
-    async function runChecksForPlayer(p, concurrency, onProgress, updateGlobal) {
-      const queue = [...(p.match_urls || [])];
-      const results = [];
-      let inFlight = 0, idx = 0, done = 0;
+      for(const p of players){
+        const matchUrls=(p.match_urls&&p.match_urls.length)?p.match_urls:pasted.filter(u=>/\/match\/\d+/.test(u));
+        const pid=p.player_id?Number(p.player_id):null;
+        const tasks=matchUrls.map(u=>({ matchUrl:u, playerId:pid, playerName:p.player_name||'' }));
 
-      return new Promise((resolve) => {
-        const pump = () => {
-          while (inFlight < concurrency && idx < queue.length) {
-            const matchUrl = queue[idx++];
-            inFlight++;
-            fetch("/.netlify/functions/check", {
-              method: "POST",
-              headers: { "content-type":"application/json" },
-              body: JSON.stringify({ matchUrl, playerId: p.player_id, playerName: p.player_name })
-            })
-            .then(async res => {
-              // defensive JSON parsing
-              const txt = await res.text();
-              try { return { ok:true, json: txt ? JSON.parse(txt) : null }; }
-              catch(err) { return { ok:false, text: txt, status: res.status, statusText: res.statusText }; }
-            })
-            .then(resp => {
-              if (!resp.ok) {
-                results.push({ match_url: matchUrl, error: `HTTP ${resp.status} ${resp.statusText}`, raw: resp.text });
-              } else {
-                results.push(resp.json || resp.json === null ? resp.json : resp.json);
-              }
-            })
-            .catch(e => results.push({ match_url: matchUrl, error: String(e) }))
-            .finally(() => {
-              inFlight--; done++;
-              if (onProgress) onProgress(done, queue.length, p);
-              if (updateGlobal) updateGlobal();
-              pump();
-            });
-          }
-          if (inFlight === 0 && idx >= queue.length) resolve(results);
-        };
-        pump();
-      });
-    }
-
-    btnRun.onclick = async ()=>{
-      try {
-        btnRun.disabled = true;
-        setTag("Working…","warn");
-        summaryBox.textContent = "Starting…";
-        statusEl.textContent = "Running pipeline…";
-        progressFill.style.width = "0%";
-        progressFill.classList.remove("done");
-
-        const urls = urlsEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-        if (!urls.length) { setTag("Idle"); btnRun.disabled=false; return; }
-
-        // Discover
-        const discRes = await fetch("/.netlify/functions/discover", {
-          method: "POST",
-          headers: { "content-type":"application/json" },
-          body: JSON.stringify({ urls, maxMatches: Number(qs('#maxMatches').value||0) })
+        const perMatch=await throttleQueue(tasks,3,async(t)=>{
+          try{
+            const j=await fetchJSONSafe('/.netlify/functions/check',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({playerId:t.playerId||undefined,playerName:t.playerName||undefined,matchUrl:t.matchUrl})});
+            if(j && j.league_allowed && j.within_season_2025_26) return j;
+            return null;
+          }catch(_e){ return null; }
         });
 
-        let discJson = null;
-        try {
-          discJson = await discRes.json();
-        } catch (e) {
-          const txt = await discRes.text();
-          statusEl.textContent = `Discover parse error (${discRes.status}): ${txt.slice(0,200)}`;
-          setTag("Error","err");
-          btnRun.disabled = false;
-          return;
+        // --- De-dup by fixture_key (or fallback) BEFORE aggregating ---
+        const seen = new Map();
+        for (const r of (perMatch||[]).filter(Boolean)) {
+          const key = r.fixture_key || `${r.league_id||'X'}|${(r.match_datetime_utc||'').slice(0,16)}|${r.home_team_id||r.home_team_name}|${r.away_team_id||r.away_team_name}`;
+          if (!seen.has(key)) { seen.set(key, r); continue; }
+          const prev = seen.get(key);
+          // prefer POTM, then higher rating
+          const better = (r.player_is_pom && !prev.player_is_pom) ? r
+                       : ((Number(r.player_rating||0) > Number(prev.player_rating||0)) ? r : prev);
+          seen.set(key, better);
+        }
+        const ok2 = Array.from(seen.values());
+
+        // Patch name if empty
+        if((!p.player_name||p.player_name==='(unknown)') && ok2.length && ok2[0].echo_player_name){
+          p.player_name=ok2[0].echo_player_name;
         }
 
-        if (!discJson || !Array.isArray(discJson.players)) {
-          statusEl.textContent = `Discover returned unexpected payload: ${JSON.stringify(discJson).slice(0,1000)}`;
-          setTag("Error","err");
-          btnRun.disabled = false;
-          return;
-        }
-
-        const players = discJson.players;
-        // quick debug display of discovered counts for each player
-        summaryBox.textContent = players.map(p => `${p.player_name || p.player_url} → ${ (p.match_urls||[]).length } matches`).join("\n");
-
-        // total matches for global progress
-        const totalMatches = players.reduce((a,p)=> a + ((p.match_urls||[]).length), 0);
-        let globalDone = 0;
-        const concurrency = Math.max(1, Number(qs('#concurrency').value || 3));
-        const bundles = [];
-        const progressState = {};
-
-        function updateGlobalProgress() {
-          const pct = totalMatches > 0 ? Math.round((globalDone/totalMatches)*1000)/10 : 0;
-          progressFill.style.width = pct + "%";
-          if (globalDone >= totalMatches && totalMatches > 0) progressFill.classList.add("done");
-        }
-
-        function updateStatusLines() {
-          const lines = [ `GLOBAL: ${globalDone}/${totalMatches} matches checked` ];
-          for (const p of players) {
-            const st = progressState[p.player_name] || { done:0, total: (p.match_urls||[]).length };
-            lines.push(`${p.player_name || p.player_url} — ${st.done}/${st.total}`);
-          }
-          statusEl.textContent = lines.join("\n");
-        }
-
-        for (const p of players) {
-          progressState[p.player_name] = { done: 0, total: (p.match_urls||[]).length };
-          const checked = await runChecksForPlayer(p, concurrency,
-            (done,total,pp) => {
-              progressState[pp.player_name] = { done, total };
-              updateStatusLines();
-            },
-            () => { globalDone++; updateGlobalProgress(); updateStatusLines(); }
-          );
-          // for any non-json returned entries we attempted to put the raw text; normalize shape
-          const normalized = (checked || []).map(item => {
-            if (!item) return { match_url: null, error: "empty response" };
-            if (item.ok === false && item.raw) return { match_url: null, error: "non-json", raw_text: item.raw };
-            // item may be the parsed object already
-            return item;
-          });
-          bundles.push({ ...p, raw: normalized });
-        }
-
-        // render results and CSV
-        renderResults(bundles);
-        lastDetailsCSV = toDetailsCSV(bundles);
-        dlDetails.disabled = !lastDetailsCSV;
-        out.textContent = JSON.stringify({ results: bundles }, null, 2);
-        setTag("Done","ok");
-        summaryBox.textContent = "Completed.";
-      } catch (e) {
-        setTag("Error","err");
-        statusEl.textContent = String(e);
-      } finally {
-        btnRun.disabled = false;
+        results.push({ player_url:p.player_url, player_name:p.player_name, raw: ok2 });
+        appendStatus(`✓ ${resolveName({player_name:p.player_name,player_url:p.player_url})}: ${ok2.length} checked`,'ok');
       }
-    };
 
-    dlDetails.onclick = ()=> {
-      if (!lastDetailsCSV) return;
-      const blob = new Blob([lastDetailsCSV], { type: "text/csv" });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = "details.csv";
-      a.click();
-    };
+      resultsEl.innerHTML='';
+      for(const r of results) resultsEl.appendChild(renderPlayerCard(r));
 
-  })();
+      lastSummary = toSummaryCSV(results);
+      lastDetails = toDetailsCSV(results);
+      lastPotmOnly = toPotmOnlyCSV(results);
+      lastJSON = { results };
+
+      btnDownloadSummary.disabled = btnDownloadDetails.disabled = btnDownloadJSON.disabled = btnDownloadPotmOnly.disabled = false;
+
+      setStatusPills([{text:`Players processed: ${results.length}`,type:'ok'},{text:`Matches checked: ${results.reduce((a,p)=>a+p.raw.length,0)}`,type:'ok'}]);
+    });
+
+    // ---------- Downloads ----------
+    btnDownloadSummary.addEventListener('click',()=>{ if(lastSummary.length) downloadCSV('summary_potm_stats_2025_26.csv', lastSummary); });
+    btnDownloadDetails.addEventListener('click',()=>{ if(lastDetails.length) downloadCSV('details_potm_stats_2025_26.csv', lastDetails); });
+    btnDownloadPotmOnly.addEventListener('click',()=>{ if(lastPotmOnly.length) downloadCSV('potm_table_2025_26.csv', lastPotmOnly); });
+    btnDownloadJSON.addEventListener('click',()=>{ if(lastJSON) downloadJSON('potm_stats_2025_26.json', lastJSON); });
+    btnDiscoverDebug.addEventListener('click',()=>{ if(lastDiscoverDebug) downloadJSON('discover_debug.json', lastDiscoverDebug); });
+
+    // Prefill a couple of sample players
+    urlsEl.value=['https://www.fotmob.com/players/1467236/lamine-yamal','https://www.fotmob.com/players/1021382/joao-pedro'].join('\n');
   </script>
 </body>
 </html>
