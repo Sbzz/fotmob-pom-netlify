@@ -20,13 +20,17 @@ Tiny app + Netlify Functions to collect **POTM hits, full‑match 90 (FMP), goal
 
 ```
 .
-├─ index.html                   # frontend UI (publish root)
-├─ players.csv                  # optional seed list (name,url or url), served at /players.csv
-├─ url.csv                      # optional seed list (url), served at /url.csv
+├─ netlify.toml
+├─ package.json
+└─ public/
+└─ index.html # UI (publish root)
+└─ players.csv # optional seed list (served at /players.csv)
+└─ url.csv # optional seed list (served at /url.csv)
+├─ README.md
 └─ netlify/
-   └─ functions/
-      ├─ discover.mjs           # finds player’s 2025–26 top‑5 league matches
-      └─ check.mjs              # extracts stats per match
+└─ functions/
+├─ discover.mjs
+└─ check.mjs
 ```
 
 If you don’t already have a Netlify config, this minimal **netlify.toml** works:
