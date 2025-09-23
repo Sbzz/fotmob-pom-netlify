@@ -52,19 +52,20 @@
     .summaryLine{background:rgba(96,165,250,.11);border:1px solid rgba(96,165,250,.35);color:#dbeafe;padding:10px 12px;border-radius:12px;font-size:14px;line-height:1.5;box-shadow:var(--shadow)}
     .grid{overflow:auto;border:1px solid var(--border);border-radius:12px;margin-top:12px}
 
-    /* --- Column alignment/widths (PATCH) --- */
-    table{ width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
+    /* --- Readable table (PATCH) --- */
+    table{ width:100%; border-collapse:collapse; font-size:13px; table-layout:auto; min-width: 900px; }
     th,td{ padding:10px 12px; border-bottom:1px solid #1f2a33; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
     th{position:sticky;top:0;background:#10151b;color:#9fb3c8;font-weight:700}
     tr:hover td{background:#0f141a}
     th.center, td.center { text-align:center; }
-    th.num, td.num { text-align:center; font-variant-numeric: tabular-nums; }
-    .col-match{ width:48%; }
-    .col-league{ width:16%; }
-    .col-num{ width:auto; }
+    th.num, td.num { text-align:center; font-variant-numeric: tabular-nums; min-width: 6.5ch; }
+    /* set sensible minimums so headers don't truncate to single letters */
+    th:first-child, td:first-child { min-width: 26rem; }
+    th:nth-child(2), td:nth-child(2) { min-width: 10rem; }
 
     .footerActions{margin-top:20px;display:flex;gap:10px;flex-wrap:wrap}
     .small{font-size:12px}.muted{color:#9fb3c8}
+    .link-clip{max-width:100%;overflow:hidden;text-overflow:ellipsis}
   </style>
 </head>
 <body>
@@ -126,7 +127,7 @@
 
   <script>
     // ---------- Config ----------
-    const DISCOVER_BATCH_SIZE = 1;          // <-- leave as-is (your stable setup)
+    const DISCOVER_BATCH_SIZE = 1;          // working setup
     const DISCOVER_RETRIES = 1;
     const DISCOVER_PAUSE_MS = 250;
 
@@ -239,7 +240,8 @@
       const nm=resolveName(p);
       const card=document.createElement('div'); card.className='playerCard';
       const head=document.createElement('div'); head.className='head';
-      head.innerHTML=`<div class="name">${nm}</div><div class="muted small" style="max-width:100%;overflow:hidden;text-overflow:ellipsis">${p.player_url||''}</div>`;
+      const urlHtml = p.player_url ? `<a class="muted small link-clip" href="${p.player_url}" target="_blank" rel="noopener">${p.player_url}</a>` : '';
+      head.innerHTML=`<div class="name">${nm}</div>${urlHtml}`;
       card.appendChild(head);
 
       const agg=aggregate(p.raw);
@@ -250,12 +252,6 @@
       const grid=document.createElement('div'); grid.className='grid';
       const table=document.createElement('table');
       table.innerHTML = `
-        <colgroup>
-          <col class="col-match"/>
-          <col class="col-league"/>
-          <col class="col-num"/><col class="col-num"/><col class="col-num"/><col class="col-num"/>
-          <col class="col-num"/><col class="col-num"/><col class="col-num"/><col class="col-num"/><col class="col-num"/>
-        </colgroup>
         <thead>
           <tr>
             <th>Match</th>
@@ -334,7 +330,7 @@
       for(let i=start;i<lines.length;i++){
         const row = lines[i];
         const cells = []; let cur=''; let q=false;
-        for(const ch of row){ if(ch=='"'){ q=!q; continue; } if(ch===',' && !q){ cells.push(cur); cur=''; } else cur+=ch; }
+        for(const ch of row){ if(ch==='"'){ q=!q; continue; } if(ch===',' && !q){ cells.push(cur); cur=''; } else cur+=ch; }
         cells.push(cur);
         const url = (cells[1]??cells[0]??'').trim();
         if(/\/players\//.test(url)) out.push(normalizePlayerUrl(url));
@@ -362,7 +358,7 @@
       for(let i=start;i<lines.length;i++){
         const row=lines[i];
         if(headerHasUrl){
-          const cells=[]; let cur=''; let q=false; for(const ch of row){ if(ch=='"'){ q=!q; continue;} if(ch===',' && !q){ cells.push(cur); cur=''; } else cur+=ch; } cells.push(cur);
+          const cells=[]; let cur=''; let q=false; for(const ch of row){ if(ch==='"'){ q=!q; continue;} if(ch===',' && !q){ cells.push(cur); cur=''; } else cur+=ch; } cells.push(cur);
           const url=(cells[0]||'').trim(); if(/\/players\//.test(url)) list.push(normalizePlayerUrl(url));
         }else{
           const url=row; if(/\/players\//.test(url)) list.push(normalizePlayerUrl(url));
