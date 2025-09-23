@@ -51,10 +51,18 @@
     .head .name{font-weight:800;font-size:18px}
     .summaryLine{background:rgba(96,165,250,.11);border:1px solid rgba(96,165,250,.35);color:#dbeafe;padding:10px 12px;border-radius:12px;font-size:14px;line-height:1.5;box-shadow:var(--shadow)}
     .grid{overflow:auto;border:1px solid var(--border);border-radius:12px;margin-top:12px}
-    table{width:100%;border-collapse:collapse;font-size:13px}
-    th,td{padding:10px 12px;border-bottom:1px solid #1f2a33;white-space:nowrap}
+
+    /* --- Column alignment/widths (PATCH) --- */
+    table{ width:100%; border-collapse:collapse; font-size:13px; table-layout:fixed; }
+    th,td{ padding:10px 12px; border-bottom:1px solid #1f2a33; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
     th{position:sticky;top:0;background:#10151b;color:#9fb3c8;font-weight:700}
     tr:hover td{background:#0f141a}
+    th.center, td.center { text-align:center; }
+    th.num, td.num { text-align:center; font-variant-numeric: tabular-nums; }
+    .col-match{ width:48%; }
+    .col-league{ width:16%; }
+    .col-num{ width:auto; }
+
     .footerActions{margin-top:20px;display:flex;gap:10px;flex-wrap:wrap}
     .small{font-size:12px}.muted{color:#9fb3c8}
   </style>
@@ -118,9 +126,9 @@
 
   <script>
     // ---------- Config ----------
-    const DISCOVER_BATCH_SIZE = 1;          // keep small to respect function budget
-    const DISCOVER_RETRIES = 1;             // retry each batch once if it returns 0 players
-    const DISCOVER_PAUSE_MS = 250;          // slight pause between batches
+    const DISCOVER_BATCH_SIZE = 1;          // <-- leave as-is (your stable setup)
+    const DISCOVER_RETRIES = 1;
+    const DISCOVER_PAUSE_MS = 250;
 
     // ---------- DOM helpers ----------
     const qs=(s,el=document)=>el.querySelector(s);
@@ -240,15 +248,31 @@
       card.appendChild(summary);
 
       const grid=document.createElement('div'); grid.className='grid';
-      const table=document.createElement('table'); table.innerHTML=`
+      const table=document.createElement('table');
+      table.innerHTML = `
+        <colgroup>
+          <col class="col-match"/>
+          <col class="col-league"/>
+          <col class="col-num"/><col class="col-num"/><col class="col-num"/><col class="col-num"/>
+          <col class="col-num"/><col class="col-num"/><col class="col-num"/><col class="col-num"/><col class="col-num"/>
+        </colgroup>
         <thead>
           <tr>
-            <th>Match</th><th>League</th>
-            <th>POTM?</th><th>Rating</th>
-            <th>G</th><th>NPG</th><th>PG</th><th>A</th><th>YC</th><th>RC</th><th>FMP</th>
+            <th>Match</th>
+            <th>League</th>
+            <th class="center">POTM?</th>
+            <th class="num">Rating</th>
+            <th class="num">G</th>
+            <th class="num">NPG</th>
+            <th class="num">PG</th>
+            <th class="num">A</th>
+            <th class="num">YC</th>
+            <th class="num">RC</th>
+            <th class="num">FMP</th>
           </tr>
         </thead>
         <tbody></tbody>`;
+
       const tb=table.querySelector('tbody');
       for(const r of (p.raw||[])){
         if(!didAppear(r)) continue; // show only appearances
@@ -256,15 +280,15 @@
         const tr=document.createElement('tr'); tr.innerHTML=`
           <td><a href="${r.match_url}" target="_blank" rel="noopener">${r.match_title||r.resolved_match_id||'match'}</a></td>
           <td>${r.league_label??''}</td>
-          <td>${r.player_is_pom?'✅':''}</td>
-          <td>${(r.player_rating!=null?Number(r.player_rating).toFixed(2):'')}</td>
-          <td>${s.goals??''}</td>
-          <td>${Math.max(0, Number(s.goals||0)-Number(s.penalty_goals||0))}</td>
-          <td>${s.penalty_goals??''}</td>
-          <td>${s.assists??''}</td>
-          <td>${s.yellow_cards??''}</td>
-          <td>${s.red_cards??''}</td>
-          <td>${s.full_match_played?'90+':''}</td>`;
+          <td class="center">${r.player_is_pom?'✅':''}</td>
+          <td class="num">${(r.player_rating!=null?Number(r.player_rating).toFixed(2):'')}</td>
+          <td class="num">${s.goals??''}</td>
+          <td class="num">${Math.max(0, Number(s.goals||0)-Number(s.penalty_goals||0))}</td>
+          <td class="num">${s.penalty_goals??''}</td>
+          <td class="num">${s.assists??''}</td>
+          <td class="num">${s.yellow_cards??''}</td>
+          <td class="num">${s.red_cards??''}</td>
+          <td class="num">${s.full_match_played?'90+':''}</td>`;
         tb.appendChild(tr);
       }
       grid.appendChild(table); card.appendChild(grid);
@@ -298,7 +322,7 @@
       try{
         const res=await fetch(path,{cache:'no-store'});
         const txt=await res.text();
-        return txt.replace(/^\uFEFF/, ''); // strip BOM
+        return txt.replace(/^\uFEFF/, '');
       }catch(e){ appendStatus(`Load failed: ${path}`,'error'); return ''; }
     }
     function parsePlayersCsv(text){
@@ -309,9 +333,8 @@
       const start = looksHeader?1:0;
       for(let i=start;i<lines.length;i++){
         const row = lines[i];
-        // split respecting simple quoted CSV
         const cells = []; let cur=''; let q=false;
-        for(const ch of row){ if(ch==='"'){ q=!q; continue; } if(ch===',' && !q){ cells.push(cur); cur=''; } else cur+=ch; }
+        for(const ch of row){ if(ch=='"'){ q=!q; continue; } if(ch===',' && !q){ cells.push(cur); cur=''; } else cur+=ch; }
         cells.push(cur);
         const url = (cells[1]??cells[0]??'').trim();
         if(/\/players\//.test(url)) out.push(normalizePlayerUrl(url));
@@ -331,7 +354,6 @@
     btnLoadUrlCsv.addEventListener('click', async()=>{
       const txt = await loadCsvAt('/url.csv');
       if(!txt) return;
-      // Accept either header with url or plain list
       const lines=txt.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
       const list=[];
       if(!lines.length){ appendStatus('url.csv empty','warn'); return; }
@@ -340,8 +362,7 @@
       for(let i=start;i<lines.length;i++){
         const row=lines[i];
         if(headerHasUrl){
-          // naive CSV split (handles simple quotes)
-          const cells=[]; let cur=''; let q=false; for(const ch of row){ if(ch==='"'){ q=!q; continue;} if(ch===',' && !q){ cells.push(cur); cur=''; } else cur+=ch; } cells.push(cur);
+          const cells=[]; let cur=''; let q=false; for(const ch of row){ if(ch=='"'){ q=!q; continue;} if(ch===',' && !q){ cells.push(cur); cur=''; } else cur+=ch; } cells.push(cur);
           const url=(cells[0]||'').trim(); if(/\/players\//.test(url)) list.push(normalizePlayerUrl(url));
         }else{
           const url=row; if(/\/players\//.test(url)) list.push(normalizePlayerUrl(url));
@@ -369,7 +390,6 @@
       const data = await fetchJSONSafe('/.netlify/functions/discover',{
         method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ urls })
       });
-      // Accept either shape: { ok:true, players:[...] } OR array
       const players = Array.isArray(data?.players) ? data.players : (Array.isArray(data)? data : []);
       return { players, raw:data };
     }
@@ -449,7 +469,6 @@
           }catch(_e){ return null; }
         });
 
-        // --- De-dup by fixture_key BEFORE aggregating ---
         const seen = new Map();
         for (const r of (perMatch||[]).filter(Boolean)) {
           const key = r.fixture_key || `${r.league_id||'X'}|${(r.match_datetime_utc||'').slice(0,16)}|${r.home_team_id||r.home_team_name}|${r.away_team_id||r.away_team_name}`;
