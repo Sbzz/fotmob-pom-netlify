@@ -52,14 +52,13 @@
     .summaryLine{background:rgba(96,165,250,.11);border:1px solid rgba(96,165,250,.35);color:#dbeafe;padding:10px 12px;border-radius:12px;font-size:14px;line-height:1.5;box-shadow:var(--shadow)}
     .grid{overflow:auto;border:1px solid var(--border);border-radius:12px;margin-top:12px}
 
-    /* --- Readable table (PATCH) --- */
+    /* --- Readable table --- */
     table{ width:100%; border-collapse:collapse; font-size:13px; table-layout:auto; min-width: 900px; }
     th,td{ padding:10px 12px; border-bottom:1px solid #1f2a33; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
     th{position:sticky;top:0;background:#10151b;color:#9fb3c8;font-weight:700}
     tr:hover td{background:#0f141a}
     th.center, td.center { text-align:center; }
     th.num, td.num { text-align:center; font-variant-numeric: tabular-nums; min-width: 6.5ch; }
-    /* set sensible minimums so headers don't truncate to single letters */
     th:first-child, td:first-child { min-width: 26rem; }
     th:nth-child(2), td:nth-child(2) { min-width: 10rem; }
 
@@ -220,11 +219,11 @@
 
     function aggregate(rows){
       const ok=(rows||[]).filter(r=>r && !r.error).filter(didAppear);
-      const acc={played:0,potm:0,goals:0,npg:0,pg:0,assists:0,yc:0,rc:0,fmp:0};
+      const acc={played:0,motm:0,goals:0,npg:0,pg:0,assists:0,yc:0,rc:0,fmp:0};
       for(const r of ok){
         const s=r.player_stats||{};
         acc.played+=1;
-        if(r.player_is_pom) acc.potm+=1;
+        if(r.player_is_pom) acc.motm+=1; // label only; underlying key is unchanged
         const g=Number(s.goals||0), pg=Number(s.penalty_goals||0);
         acc.goals += g; acc.pg += pg; acc.npg += Math.max(0, g-pg);
         acc.assists += Number(s.assists||0);
@@ -246,7 +245,7 @@
 
       const agg=aggregate(p.raw);
       const summary=document.createElement('div'); summary.className='summaryLine';
-      summary.textContent=`• ${nm}: played ${agg.played}, POTM ${agg.potm} | Goals ${agg.goals} (NPG ${agg.npg}, PG ${agg.pg}) | Ast ${agg.assists} | YC ${agg.yc} | RC ${agg.rc} | FMP ${agg.fmp}`;
+      summary.textContent=`• ${nm}: played ${agg.played}, POTM ${agg.motm} | Goals ${agg.goals} (NPG ${agg.npg}, PG ${agg.pg}) | Ast ${agg.assists} | YC ${agg.yc} | RC ${agg.rc} | FMP ${agg.fmp}`;
       card.appendChild(summary);
 
       const grid=document.createElement('div'); grid.className='grid';
@@ -256,7 +255,7 @@
           <tr>
             <th>Match</th>
             <th>League</th>
-            <th class="center">POTM?</th>
+            <th class="center">MOTM</th>
             <th class="num">Rating</th>
             <th class="num">G</th>
             <th class="num">NPG</th>
@@ -295,15 +294,15 @@
     let lastSummary=[], lastDetails=[], lastPotmOnly=[], lastJSON=null, lastDiscoverDebug=null;
 
     const toSummaryCSV=(res)=>{
-      const rows=[["player_name","player_url","played","potm","goals","npg","pg","assists","yc","rc","fmp"]];
+      const rows=[["player_name","played","motm","goals","npg","pg","assists","yc","rc","fmp"]];
       for(const p of res){ const a=aggregate(p.raw);
-        rows.push([resolveName(p),p.player_url,a.played,a.potm,a.goals,a.npg,a.pg,a.assists,a.yc,a.rc,a.fmp]);
+        rows.push([resolveName(p),a.played,a.motm,a.goals,a.npg,a.pg,a.assists,a.yc,a.rc,a.fmp]);
       }
       return rows;
     };
     const toPotmOnlyCSV=(res)=>{
       const rows=[["player_name","player_url","potm"]];
-      for(const p of res){ const a=aggregate(p.raw); rows.push([resolveName(p),p.player_url,a.potm]); }
+      for(const p of res){ const a=aggregate(p.raw); rows.push([resolveName(p),p.player_url,a.motm]); }
       return rows;
     };
     const toDetailsCSV=(res)=>{
