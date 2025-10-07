@@ -1,0 +1,1202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FBS StarBoy League - Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+
+        .dashboard-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .dashboard-title {
+            font-size: 1.8rem;
+            margin-bottom: 20px;
+            color: #333;
+            text-align: center;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .leaderboard-section {
+            margin-top: 40px;
+        }
+
+        .leaderboard-title {
+            font-size: 2rem;
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .leaderboard {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+
+        .leaderboard-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            border-bottom: 1px solid #eee;
+            transition: all 0.3s ease;
+        }
+
+        .leaderboard-item:hover {
+            background: rgba(102, 126, 234, 0.1);
+            border-radius: 10px;
+            padding: 15px 10px;
+        }
+
+        .leaderboard-item:last-child {
+            border-bottom: none;
+        }
+
+        .rank-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex: 1;
+        }
+
+        .rank-number {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border-radius: 50%;
+            width: 35px;
+            height: 35px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .player-info {
+            flex: 1;
+        }
+
+        .player-name {
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-bottom: 5px;
+        }
+
+        .player-stats {
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .points {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .trophy, .star {
+            font-size: 1.5rem;
+            margin-right: 10px;
+        }
+
+        .expert-players {
+            font-size: 0.85rem;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .dashboard-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .dashboard-item:last-child {
+            border-bottom: none;
+        }
+
+        .scoring-info {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .scoring-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .scoring-item {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .container {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚽ FBS StarBoy League ⚽</h1>
+            <p>NL Experts Championship Dashboard</p>
+        </div>
+
+        <div class="scoring-info">
+            <h3>Scoring System</h3>
+            <div class="scoring-grid">
+                <div class="scoring-item">
+                    <strong>NPG:</strong> 20 pts
+                </div>
+                <div class="scoring-item">
+                    <strong>PG:</strong> 15 pts
+                </div>
+                <div class="scoring-item">
+                    <strong>Assists:</strong> 10 pts
+                </div>
+                <div class="scoring-item">
+                    <strong>FMP:</strong> 5 pts
+                </div>
+                <div class="scoring-item">
+                    <strong>MOTM:</strong> 5 pts
+                </div>
+                <div class="scoring-item">
+                    <strong>YC:</strong> -5 pts
+                </div>
+                <div class="scoring-item">
+                    <strong>RC:</strong> -10 pts
+                </div>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="dashboard-card">
+                <h2 class="dashboard-title">🏆 Expert Dashboard</h2>
+                <div id="expert-dashboard"></div>
+            </div>
+
+            <div class="dashboard-card">
+                <h2 class="dashboard-title">⭐ Player Dashboard</h2>
+                <div id="player-dashboard"></div>
+            </div>
+        </div>
+
+        <div class="leaderboard-section">
+            <h2 class="leaderboard-title">Expert Leaderboard</h2>
+            <div class="leaderboard">
+                <div id="expert-leaderboard"></div>
+            </div>
+        </div>
+
+        <div class="leaderboard-section">
+            <h2 class="leaderboard-title">Player Leaderboard</h2>
+            <div class="leaderboard">
+                <div id="player-leaderboard"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Player stats with calculated points
+        const playerStats = {
+        "Alex Baena": {
+                "NPG": 0,
+                "PG": 0,
+                "Assist": 1,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 1,
+                "RC": 0,
+                "Total": 5
+        },
+        "Alexander Isak": {
+                "NPG": 0,
+                "PG": 0,
+                "Assist": 1,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 10
+        },
+        "Ander Barrenetxea": {
+                "NPG": 1,
+                "PG": 0,
+                "Assist": 3,
+                "FMP": 3,
+                "MOTM": 2,
+                "YC": 1,
+                "RC": 0,
+                "Total": 70
+        },
+        "Ange-Yoan Bonny": {
+                "NPG": 2,
+                "PG": 0,
+                "Assist": 3,
+                "FMP": 0,
+                "MOTM": 1,
+                "YC": 0,
+                "RC": 0,
+                "Total": 75
+        },
+        "Arda Güler": {
+                "NPG": 3,
+                "PG": 0,
+                "Assist": 3,
+                "FMP": 1,
+                "MOTM": 0,
+                "YC": 1,
+                "RC": 0,
+                "Total": 90
+        },
+        "Benjamin Šeško": {
+                "NPG": 2,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 2,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 50
+        },
+        "Bradley Barcola": {
+                "NPG": 3,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 1,
+                "MOTM": 0,
+                "YC": 1,
+                "RC": 0,
+                "Total": 60
+        },
+        "Bukayo Saka": {
+                "NPG": 1,
+                "PG": 1,
+                "Assist": 0,
+                "FMP": 2,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 45
+        },
+        "Cole Palmer": {
+                "NPG": 1,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 1,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 25
+        },
+        "Charles De Ketelaere": {
+                "NPG": 2,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 1,
+                "MOTM": 1,
+                "YC": 0,
+                "RC": 0,
+                "Total": 50
+        },
+        "Chico Conceição": {
+                "NPG": 1,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 20
+        },
+        "Désiré Doué": {
+                "NPG": 0,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 0
+        },
+        "Eliesse Ben Seghir": {
+                "NPG": 0,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 1,
+                "RC": 0,
+                "Total": -5
+        },
+        "Emanuel Emegha": {
+                "NPG": 2,
+                "PG": 0,
+                "Assist": 2,
+                "FMP": 1,
+                "MOTM": 0,
+                "YC": 2,
+                "RC": 0,
+                "Total": 55
+        },
+        "Endrick Felipe": {
+                "NPG": 0,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 0
+        },
+        "Estêvão Willian": {
+                "NPG": 1,
+                "PG": 0,
+                "Assist": 1,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 1,
+                "RC": 0,
+                "Total": 25
+        },
+        "Evan Ferguson": {
+                "NPG": 0,
+                "PG": 0,
+                "Assist": 1,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 1,
+                "RC": 0,
+                "Total": 5
+        },
+        "Florian Wirtz": {
+                "NPG": 0,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 1,
+                "RC": 0,
+                "Total": -5
+        },
+        "Francesco Camarda": {
+                "NPG": 1,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 1,
+                "RC": 0,
+                "Total": 15
+        },
+        "Jamal Musiala": {
+                "NPG": 0,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 0
+        },
+        "João Pedro": {
+                "NPG": 2,
+                "PG": 0,
+                "Assist": 3,
+                "FMP": 4,
+                "MOTM": 1,
+                "YC": 0,
+                "RC": 0,
+                "Total": 95
+        },
+        "Jonathan Burkardt": {
+                "NPG": 1,
+                "PG": 1,
+                "Assist": 0,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 1,
+                "RC": 0,
+                "Total": 30
+        },
+        "Jonathan David": {
+                "NPG": 1,
+                "PG": 0,
+                "Assist": 1,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 30
+        },
+        "Jude Bellingham": {
+                "NPG": 0,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 0
+        },
+        "Julián Álvarez": {
+                "NPG": 5,
+                "PG": 1,
+                "Assist": 1,
+                "FMP": 2,
+                "MOTM": 3,
+                "YC": 1,
+                "RC": 0,
+                "Total": 145
+        },
+        "Karim Adeyemi": {
+                "NPG": 2,
+                "PG": 0,
+                "Assist": 1,
+                "FMP": 0,
+                "MOTM": 1,
+                "YC": 1,
+                "RC": 0,
+                "Total": 50
+        },
+        "Kenan Yildiz": {
+                "NPG": 1,
+                "PG": 0,
+                "Assist": 3,
+                "FMP": 3,
+                "MOTM": 1,
+                "YC": 0,
+                "RC": 0,
+                "Total": 70
+        },
+        "Khvicha Kvaratskhelia": {
+                "NPG": 0,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 1,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 5
+        },
+        "Lamine Yamal": {
+                "NPG": 1,
+                "PG": 1,
+                "Assist": 3,
+                "FMP": 3,
+                "MOTM": 2,
+                "YC": 0,
+                "RC": 0,
+                "Total": 90
+        },
+        "Loïs Openda": {
+                "NPG": 0,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 0
+        },
+        "Lorenzo Lucca": {
+                "NPG": 1,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 1,
+                "RC": 0,
+                "Total": 15
+        },
+        "Mason Greenwood": {
+                "NPG": 0,
+                "PG": 2,
+                "Assist": 3,
+                "FMP": 4,
+                "MOTM": 1,
+                "YC": 0,
+                "RC": 0,
+                "Total": 85
+        },
+        "Matías Soulé": {
+                "NPG": 3,
+                "PG": 0,
+                "Assist": 2,
+                "FMP": 1,
+                "MOTM": 2,
+                "YC": 0,
+                "RC": 0,
+                "Total": 95
+        },
+        "Michael Olise": {
+                "NPG": 3,
+                "PG": 0,
+                "Assist": 2,
+                "FMP": 4,
+                "MOTM": 0,
+                "YC": 2,
+                "RC": 0,
+                "Total": 90
+        },
+        "Mika Biereth": {
+                "NPG": 1,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 20
+        },
+        "Moise Kean": {
+                "NPG": 1,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 6,
+                "MOTM": 0,
+                "YC": 1,
+                "RC": 0,
+                "Total": 45
+        },
+        "Mohammed Kudus": {
+                "NPG": 1,
+                "PG": 0,
+                "Assist": 4,
+                "FMP": 4,
+                "MOTM": 1,
+                "YC": 2,
+                "RC": 0,
+                "Total": 75
+        },
+        "Morgan Rogers": {
+                "NPG": 0,
+                "PG": 0,
+                "Assist": 2,
+                "FMP": 6,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 50
+        },
+        "Nick Woltemade": {
+                "NPG": 2,
+                "PG": 1,
+                "Assist": 0,
+                "FMP": 1,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 60
+        },
+        "Nico Paz": {
+                "NPG": 3,
+                "PG": 0,
+                "Assist": 3,
+                "FMP": 4,
+                "MOTM": 1,
+                "YC": 1,
+                "RC": 0,
+                "Total": 110
+        },
+        "Nico Williams": {
+                "NPG": 0,
+                "PG": 1,
+                "Assist": 1,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 25
+        },
+        "Nikola Krstović": {
+                "NPG": 2,
+                "PG": 0,
+                "Assist": 3,
+                "FMP": 1,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 75
+        },
+        "Nuno Mendes": {
+                "NPG": 1,
+                "PG": 0,
+                "Assist": 1,
+                "FMP": 2,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 40
+        },
+        "Oihan Sancet": {
+                "NPG": 0,
+                "PG": 1,
+                "Assist": 0,
+                "FMP": 1,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 20
+        },
+        "Phil Foden": {
+                "NPG": 1,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 3,
+                "MOTM": 0,
+                "YC": 1,
+                "RC": 0,
+                "Total": 30
+        },
+        "Roberto Piccoli": {
+                "NPG": 0,
+                "PG": 0,
+                "Assist": 0,
+                "FMP": 0,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 0
+        },
+        "Rómulo Cardoso": {
+                "NPG": 2,
+                "PG": 0,
+                "Assist": 1,
+                "FMP": 1,
+                "MOTM": 0,
+                "YC": 0,
+                "RC": 0,
+                "Total": 55
+        },
+        "Vinícius Júnior": {
+                "NPG": 4,
+                "PG": 1,
+                "Assist": 4,
+                "FMP": 3,
+                "MOTM": 2,
+                "YC": 1,
+                "RC": 0,
+                "Total": 155
+        }
+};
+
+        // Expert selections with calculated totals
+        const experts = [
+        {
+                "expert": "SportsWeb",
+                "players": [
+                        "Cole Palmer",
+                        "Vinícius Júnior",
+                        "Kenan Yildiz",
+                        "Michael Olise",
+                        "Mason Greenwood"
+                ],
+                "totalPoints": 425
+        },
+        {
+                "expert": "Gucciboy",
+                "players": [
+                        "Cole Palmer",
+                        "Julián Álvarez",
+                        "Ange-Yoan Bonny",
+                        "Michael Olise",
+                        "Mason Greenwood"
+                ],
+                "totalPoints": 420
+        },
+        {
+                "expert": "iamoyindamola",
+                "players": [
+                        "Bukayo Saka",
+                        "Lamine Yamal",
+                        "Kenan Yildiz",
+                        "Michael Olise",
+                        "Mason Greenwood"
+                ],
+                "totalPoints": 380
+        },
+        {
+                "expert": "ForValour",
+                "players": [
+                        "João Pedro",
+                        "Lamine Yamal",
+                        "Francesco Camarda",
+                        "Michael Olise",
+                        "Mason Greenwood"
+                ],
+                "totalPoints": 375
+        },
+        {
+                "expert": "Enzo5",
+                "players": [
+                        "Cole Palmer",
+                        "Lamine Yamal",
+                        "Kenan Yildiz",
+                        "Michael Olise",
+                        "Mason Greenwood"
+                ],
+                "totalPoints": 360
+        },
+        {
+                "expert": "drisham",
+                "players": [
+                        "Cole Palmer",
+                        "Arda Güler",
+                        "Kenan Yildiz",
+                        "Michael Olise",
+                        "Mason Greenwood"
+                ],
+                "totalPoints": 360
+        },
+        {
+                "expert": "VicThory",
+                "players": [
+                        "Mohammed Kudus",
+                        "Lamine Yamal",
+                        "Nico Paz",
+                        "Loïs Openda",
+                        "Mason Greenwood"
+                ],
+                "totalPoints": 360
+        },
+        {
+                "expert": "timbros",
+                "players": [
+                        "Morgan Rogers",
+                        "Julián Álvarez",
+                        "Kenan Yildiz",
+                        "Michael Olise",
+                        "Khvicha Kvaratskhelia"
+                ],
+                "totalPoints": 360
+        },
+        {
+                "expert": "Skimpledawg",
+                "players": [
+                        "Estêvão Willian",
+                        "Lamine Yamal",
+                        "Kenan Yildiz",
+                        "Michael Olise",
+                        "Mason Greenwood"
+                ],
+                "totalPoints": 360
+        },
+        {
+                "expert": "Maimakawa1",
+                "players": [
+                        "João Pedro",
+                        "Lamine Yamal",
+                        "Kenan Yildiz",
+                        "Michael Olise",
+                        "Désiré Doué"
+                ],
+                "totalPoints": 345
+        },
+        {
+                "expert": "nateevs",
+                "players": [
+                        "Cole Palmer",
+                        "Lamine Yamal",
+                        "Moise Kean",
+                        "Michael Olise",
+                        "Mason Greenwood"
+                ],
+                "totalPoints": 335
+        },
+        {
+                "expert": "Bombblacks",
+                "players": [
+                        "Bukayo Saka",
+                        "Lamine Yamal",
+                        "Moise Kean",
+                        "Nick Woltemade",
+                        "Mason Greenwood"
+                ],
+                "totalPoints": 325
+        },
+        {
+                "expert": "Capdan21",
+                "players": [
+                        "Cole Palmer",
+                        "Lamine Yamal",
+                        "Charles De Ketelaere",
+                        "Michael Olise",
+                        "Bradley Barcola"
+                ],
+                "totalPoints": 315
+        },
+        {
+                "expert": "Zeusis",
+                "players": [
+                        "Cole Palmer",
+                        "Julián Álvarez",
+                        "Charles De Ketelaere",
+                        "Michael Olise",
+                        "Désiré Doué"
+                ],
+                "totalPoints": 310
+        },
+        {
+                "expert": "Trevor012",
+                "players": [
+                        "Benjamin Šeško",
+                        "Lamine Yamal",
+                        "Nikola Krstović",
+                        "Loïs Openda",
+                        "Mason Greenwood"
+                ],
+                "totalPoints": 300
+        },
+        {
+                "expert": "MorataFC",
+                "players": [
+                        "Cole Palmer",
+                        "Nico Williams",
+                        "Matías Soulé",
+                        "Michael Olise",
+                        "Bradley Barcola"
+                ],
+                "totalPoints": 295
+        },
+        {
+                "expert": "patrickmuf",
+                "players": [
+                        "Benjamin Šeško",
+                        "Lamine Yamal",
+                        "Evan Ferguson",
+                        "Nick Woltemade",
+                        "Mason Greenwood"
+                ],
+                "totalPoints": 290
+        },
+        {
+                "expert": "Realtord43",
+                "players": [
+                        "João Pedro",
+                        "Lamine Yamal",
+                        "Jonathan David",
+                        "Nick Woltemade",
+                        "Désiré Doué"
+                ],
+                "totalPoints": 275
+        },
+        {
+                "expert": "Capaldi",
+                "players": [
+                        "Florian Wirtz",
+                        "Vinícius Júnior",
+                        "Lorenzo Lucca",
+                        "Michael Olise",
+                        "Mika Biereth"
+                ],
+                "totalPoints": 275
+        },
+        {
+                "expert": "Whizlight",
+                "players": [
+                        "Cole Palmer",
+                        "Lamine Yamal",
+                        "Kenan Yildiz",
+                        "Michael Olise",
+                        "Désiré Doué"
+                ],
+                "totalPoints": 275
+        },
+        {
+                "expert": "Kushercain",
+                "players": [
+                        "Estêvão Willian",
+                        "Arda Güler",
+                        "Kenan Yildiz",
+                        "Michael Olise",
+                        "Désiré Doué"
+                ],
+                "totalPoints": 275
+        },
+        {
+                "expert": "Amoto94",
+                "players": [
+                        "Cole Palmer",
+                        "Endrick Felipe",
+                        "Ange-Yoan Bonny",
+                        "Michael Olise",
+                        "Mason Greenwood"
+                ],
+                "totalPoints": 275
+        },
+        {
+                "expert": "Dathypebruv",
+                "players": [
+                        "Cole Palmer",
+                        "Lamine Yamal",
+                        "Kenan Yildiz",
+                        "Michael Olise",
+                        "Désiré Doué"
+                ],
+                "totalPoints": 275
+        },
+        {
+                "expert": "Godx",
+                "players": [
+                        "Phil Foden",
+                        "Julián Álvarez",
+                        "Roberto Piccoli",
+                        "Loïs Openda",
+                        "Mason Greenwood"
+                ],
+                "totalPoints": 260
+        },
+        {
+                "expert": "StarchAndBanga",
+                "players": [
+                        "Cole Palmer",
+                        "Lamine Yamal",
+                        "Moise Kean",
+                        "Michael Olise",
+                        "Désiré Doué"
+                ],
+                "totalPoints": 250
+        },
+        {
+                "expert": "BlewMahn",
+                "players": [
+                        "Estêvão Willian",
+                        "Nico Williams",
+                        "Kenan Yildiz",
+                        "Nick Woltemade",
+                        "Emanuel Emegha"
+                ],
+                "totalPoints": 235
+        },
+        {
+                "expert": "Silentgroper",
+                "players": [
+                        "Alexander Isak",
+                        "Lamine Yamal",
+                        "Kenan Yildiz",
+                        "Karim Adeyemi",
+                        "Désiré Doué"
+                ],
+                "totalPoints": 220
+        },
+        {
+                "expert": "ouzo1",
+                "players": [
+                        "Benjamin Šeško",
+                        "Lamine Yamal",
+                        "Kenan Yildiz",
+                        "Jamal Musiala",
+                        "Nuno Mendez"
+                ],
+                "totalPoints": 210
+        },
+        {
+                "expert": "Kimbeast",
+                "players": [
+                        "Cole Palmer",
+                        "Oihan Sancet",
+                        "Moise Kean",
+                        "Rómulo Cardoso",
+                        "Bradley Barcola"
+                ],
+                "totalPoints": 205
+        },
+        {
+                "expert": "dostr4",
+                "players": [
+                        "Cole Palmer",
+                        "Ander Barrenetxea",
+                        "Chico Conceição",
+                        "Michael Olise",
+                        "Désiré Doué"
+                ],
+                "totalPoints": 205
+        },
+        {
+                "expert": "Amethyst101",
+                "players": [
+                        "Cole Palmer",
+                        "Lamine Yamal",
+                        "Jonathan David",
+                        "Jonathan Burkardt",
+                        "Désiré Doué"
+                ],
+                "totalPoints": 175
+        },
+        {
+                "expert": "andrewbaba44",
+                "players": [
+                        "Florian Wirtz",
+                        "Alex Baena",
+                        "Moise Kean",
+                        "Jonathan Burkardt",
+                        "Mason Greenwood"
+                ],
+                "totalPoints": 160
+        }
+];
+
+        // Create sorted player array
+        const players = Object.entries(playerStats).map(([name, stats]) => ({
+            name,
+            ...stats
+        })).sort((a, b) => b.Total - a.Total);
+
+        // Populate Expert Dashboard (Top 5)
+        const expertDashboard = document.getElementById('expert-dashboard');
+        experts.slice(0, 5).forEach((expert, index) => {
+            const isTop = index === 0;
+            const playersText = expert.players.join(', ');
+            expertDashboard.innerHTML += `
+                <div class="dashboard-item">
+                    <div>
+                        <div class="player-name">
+                            ${isTop ? '🏆 ' : ''}${expert.expert}
+                        </div>
+                        <div class="expert-players">${playersText}</div>
+                    </div>
+                    <div class="points">${expert.totalPoints}</div>
+                </div>
+            `;
+        });
+
+        // Populate Player Dashboard (Top 5 players with points)
+        const playerDashboard = document.getElementById('player-dashboard');
+        const topPlayers = players.filter(p => p.Total > 0).slice(0, 5);
+        topPlayers.forEach((player, index) => {
+            const isTop = index === 0;
+            playerDashboard.innerHTML += `
+                <div class="dashboard-item">
+                    <div>
+                        <div class="player-name">
+                            ${isTop ? '⭐ ' : ''}${player.name}
+                        </div>
+                        <div class="player-stats">
+                            NPG: ${player.NPG} | PG: ${player.PG} | Assist: ${player.Assist} | MOTM: ${player.MOTM} | FMP: ${player.FMP} | YC: ${player.YC} | RC: ${player.RC}
+                        </div>
+                    </div>
+                    <div class="points">${player.Total}</div>
+                </div>
+            `;
+        });
+
+        // Populate Expert Leaderboard (All experts)
+        const expertLeaderboard = document.getElementById('expert-leaderboard');
+        experts.forEach((expert, index) => {
+            const isTop = index === 0;
+            const playersText = expert.players.join(', ');
+            expertLeaderboard.innerHTML += `
+                <div class="leaderboard-item">
+                    <div class="rank-info">
+                        <div class="rank-number">${index + 1}</div>
+                        <div class="player-info">
+                            <div class="player-name">
+                                ${isTop ? '🏆 ' : ''}${expert.expert}
+                            </div>
+                            <div class="expert-players">Players: ${playersText}</div>
+                        </div>
+                    </div>
+                    <div class="points">${expert.totalPoints} pts</div>
+                </div>
+            `;
+        });
+
+        // Populate Player Leaderboard (Only players with points > 0)
+        const playerLeaderboard = document.getElementById('player-leaderboard');
+        const playersWithPoints = players.filter(p => p.Total > 0);
+        playersWithPoints.forEach((player, index) => {
+            const isTop = index === 0;
+            playerLeaderboard.innerHTML += `
+                <div class="leaderboard-item">
+                    <div class="rank-info">
+                        <div class="rank-number">${index + 1}</div>
+                        <div class="player-info">
+                            <div class="player-name">
+                                ${isTop ? '⭐ ' : ''}${player.name}
+                            </div>
+                            <div class="player-stats">
+                                NPG: ${player.NPG} | PG: ${player.PG} | Assist: ${player.Assist} | MOTM: ${player.MOTM} | FMP: ${player.FMP} | YC: ${player.YC} | RC: ${player.RC}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="points">${player.Total} pts</div>
+                </div>
+            `;
+        });
+    </script>
+</body>
+</html>
