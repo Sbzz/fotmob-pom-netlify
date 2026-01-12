@@ -116,8 +116,9 @@ function collectMatchesFromNext(root){
     for (const [k,v] of Object.entries(node)){
       if(!Array.isArray(v) || !v.length) continue;
       const key = String(k).toLowerCase();
-      if(!/(match|fixture|game|recent|last|upcoming|schedule)/.test(key)) continue;
-
+      // Latest change below -  if(!/(match|fixture|game|recent|last|upcoming|schedule)/.test(key)) continue;
+         if(!/(match|fixture|game|recent|last|upcoming|schedule|previous|all|season|league)/.test(key)) continue;
+ 
       for(const it of v){
         if(!it || typeof it!=="object") continue;
         const mid = asNum(it?.matchId ?? it?.id);
